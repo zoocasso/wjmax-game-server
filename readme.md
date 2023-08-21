@@ -1,0 +1,1 @@
+ssh -i "WAK_keypair.pem" ec2-user@REDACTED_HOST
