@@ -1,0 +1,1 @@
+ssh -i "WAK_keypair2.pem" ubuntu@REDACTED_HOST

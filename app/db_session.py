@@ -19,8 +19,9 @@ class mysql_session:
         return rows
 
     def insert_into_table_value(self,row_form):
-        sql = f"insert into `test` "
+        sql = f"insert into `test` (`user`,`music`,`score`) VALUES ('{row_form.user}','{row_form.music}',{row_form.score});"
         self.cursor.execute(sql)
+        self.connection.commit()
         
 
     def db_close(self):

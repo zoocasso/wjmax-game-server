@@ -13,20 +13,18 @@ from fastapi import FastAPI, Request
 app = FastAPI()
 
 class Row_form(BaseModel):
-    date: str
-    open: str
-    high: str
-    low: str
-    close: str
-    volume: str
-    change: str
+    user : str
+    music : str
+    score : int
 
 
 @app.post("/row_insert")
 async def row_insert(request:Request, row_form:Row_form):
+    print(row_form)
     mysql_session = db_session.mysql_session()
     mysql_session.insert_into_table_value(row_form)
     mysql_session.db_close()
+    return "complete insert data"
 
 @app.get("/")
 async def main(request:Request):
