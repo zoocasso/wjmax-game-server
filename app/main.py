@@ -15,7 +15,24 @@ app = FastAPI()
 class Row_form(BaseModel):
     user : str
     music : str
-    score : int
+    artist : str
+    key_gubun : int
+    level : int
+    mod : int
+    max_combo : int
+    hit_score : int
+    score5 : int
+    score4 : int
+    score3 : int
+    score2 : int
+    score1 : int
+    rate : int
+    total_score : int
+    item : int
+    gear : int
+    btn_sound : int
+    speed : int
+    option : str
 
 
 @app.post("/row_insert")
@@ -33,4 +50,4 @@ async def main(request:Request):
     return "wakjmax main page"
 
 if __name__ == "__main__":
-    uvicorn.run(app, host = '0.0.0.0', port = 8000)
+    uvicorn.run(app, host = '127.0.0.1', port = 8000)
