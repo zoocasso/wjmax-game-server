@@ -35,19 +35,30 @@ class Row_form(BaseModel):
     option : str
 
 
-@app.post("/row_insert")
-async def row_insert(request:Request, row_form:Row_form):
-    print(row_form)
+
+@app.post("/insert")
+async def insert(request:Request, insert_form:Insert_form):
+    print(insert_form)
     mysql_session = db_session.mysql_session()
-    mysql_session.insert_into_table_value(row_form)
+    mysql_session.insert_user_tb(insert_form)
     mysql_session.db_close()
     return "complete insert data"
+
+class Select_form(BaseModel):
+    user : str
+
+@app.post("/select")
+async def main(request:Request, select_form:Select_form):
+    mysql_session = db_session.mysql_session()
+    mysql_session.select_user_tb(select_form)
+    mysql_session.db_close()
+    return "wakjmax main page"
 
 @app.get("/")
 async def main(request:Request):
     mysql_session = db_session.mysql_session()
     mysql_session.db_close()
-    return "wakjmax main page"
+    return "[wjmax site] please do not 돚거"
 
 if __name__ == "__main__":
     uvicorn.run(app, host = '127.0.0.1', port = 8000)

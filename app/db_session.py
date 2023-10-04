@@ -23,6 +23,9 @@ class mysql_session:
         self.cursor.execute(sql)
         self.connection.commit()
         
+    def select_user_tb(self,select_form):
+        sql = f"select * from user_tb where user={select_form.user};"
+        self.cursor.execute(sql)
 
     def db_close(self):
         self.connection.close()
