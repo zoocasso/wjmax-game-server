@@ -12,53 +12,31 @@ from fastapi import FastAPI, Request
 ## fastapi 인스턴스 저장
 app = FastAPI()
 
-class Row_form(BaseModel):
-    user : str
-    music : str
-    artist : str
-    key_gubun : int
-    level : int
-    mod : int
-    max_combo : int
-    hit_score : int
-    score5 : int
-    score4 : int
-    score3 : int
-    score2 : int
-    score1 : int
-    rate : int
-    total_score : int
-    item : int
-    gear : int
-    btn_sound : int
-    speed : int
-    option : str
+class Login_form(BaseModel):
+    user_key : str
+    nickname : str
+    device_id : str
 
-
-
-@app.post("/insert")
-async def insert(request:Request, insert_form:Insert_form):
-    print(insert_form)
-    mysql_session = db_session.mysql_session()
-    mysql_session.insert_user_tb(insert_form)
-    mysql_session.db_close()
-    return "complete insert data"
+@app.post("/users_tb")
+async def insert(request:Request, login_form:Login_form):
+    db_session.insert_into_table_value(login_form)
+    return "complete Insert data"
 
 class Select_form(BaseModel):
-    user : str
+    user_key : str
 
 @app.post("/select")
 async def main(request:Request, select_form:Select_form):
-    mysql_session = db_session.mysql_session()
-    mysql_session.select_user_tb(select_form)
-    mysql_session.db_close()
-    return "wakjmax main page"
+    db_session.select_user_tb(select_form)
+    return "complete Selct data"
+
+@app.post("/db_commit_and_close")
+async def db_commit_and_close():
+    db_session.db_commit_and_close()
 
 @app.get("/")
 async def main(request:Request):
-    mysql_session = db_session.mysql_session()
-    mysql_session.db_close()
-    return "[wjmax site] please do not 돚거"
+    return "[WJMAX OFFICAL SERVER] 왁제이맥스를 즐겨주셔서 감사합니다"
 
 if __name__ == "__main__":
     uvicorn.run(app, host = '127.0.0.1', port = 8000)
