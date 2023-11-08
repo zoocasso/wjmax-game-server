@@ -34,9 +34,9 @@ async def main(request:Request, select_form:Select_form):
 async def db_commit_and_close():
     db_session.db_commit_and_close()
 
-@app.get("/")
-async def main(request:Request):
-    return "[WJMAX OFFICAL SERVER] 왁제이맥스를 즐겨주셔서 감사합니다"
+# @app.get("/")
+# async def main(request:Request):
+#     return "[WJMAX OFFICAL SERVER] 왁제이맥스를 즐겨주셔서 감사합니다"
 
 if __name__ == "__main__":
     uvicorn.run(app, host = '127.0.0.1', port = 8000)
