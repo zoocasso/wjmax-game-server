@@ -7,11 +7,12 @@ cursor = db.cursor()
 
 with open('message.txt','r',encoding='UTF8') as f:
     playDatas = json.loads(f.read())['playDatas']
-    print(playDatas)
     
+user_key = 'zoocasso'
+temp_list = list()
 for i in range(len(playDatas)):
     playData = playDatas[i].split("*")
-
+    
     ### user_key 조회하여 변수저장 로직 필요
 
     title = playData[0]
@@ -22,4 +23,11 @@ for i in range(len(playDatas)):
     db.commit()
     music_key_start = cursor.fetchone()[0]
     for j in range(8):
-        print(f"INSERT INTO playcount_tb (`user_key`, `music_key`, `count`) values ({user_key},{music_key_start+j},{playData[j+1]})")
+        temp_dict = dict()
+        temp_dict['device_id'] = user_key
+        temp_dict['music_key'] = music_key_start+j
+        temp_dict['count'] = playData[j+1]
+        temp_list.append(temp_dict)
+temp_df = pd.DataFrame(temp_list)
+print(temp_df)
+        # print(f"INSERT INTO playcount_tb (`user_key`, `music_key`, `count`) values ({user_key},{music_key_start+j},{playData[j+1]})")

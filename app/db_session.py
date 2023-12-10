@@ -1,7 +1,7 @@
 import config
 
+import json
 import pandas as pd
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import Table, MetaData
@@ -15,13 +15,14 @@ dbname=config.DATABASE_CONFIG['dbname']
 
 MYSQLALCHEMY_URL = f"mysql+pymysql://{user}:{password}@{host}:{port}/{dbname}"
 engine = create_engine(MYSQLALCHEMY_URL, echo=True)
+conn = engine.connect()
 
 SessionLocal = sessionmaker(autocommit=False,autoflush=False,bind=engine)
 db = SessionLocal()
 
 metadata = MetaData()
 user_tb = Table("user_tb", metadata, autoload_with=engine)
-playlog_tb = Table("playlog_tb", metadata, autoload_with=engine)
+# playlog_tb = Table("playlog_tb", metadata, autoload_with=engine)
 playcount_tb = Table("playcount_tb", metadata, autoload_with=engine)
 music_tb =  Table("music_tb", metadata, autoload_with=engine)
 
@@ -36,6 +37,31 @@ def insert_playlog_tb(music_key, device_id, total_score, insert_time):
 def insert_playcount_tb(device_id,music_key,count):
     insert_playcount_tb_sql = insert(playcount_tb).values(device_id=device_id, music_key=music_key, count=count)
     db.execute(insert_playcount_tb_sql)
+
+def insert_pandas_playcount_tb(device_id,count_log):
+    count_log = count_log.replace("'",'"')
+    playDatas = json.loads(count_log)["playDatas"]
+    
+    temp_list = list()
+    for i in range(len(playDatas)):
+        playData = playDatas[i].split("*")
+        music_title = playData[0]
+        if music_title == "오르트 구름":
+            music_title = "Oort Cloud"
+        music_key = select_music_key(music_title)
+        music_key_fetchall = music_key.fetchall()
+        music_key_start = music_key_fetchall[0][0]
+        
+        for j in range(8):
+            temp_dict = dict()
+            temp_dict['device_id'] = device_id
+            temp_dict['music_key'] = music_key_start+j
+            temp_dict['count'] = playData[j+1]
+            temp_list.append(temp_dict)
+    temp_df = pd.DataFrame(temp_list)
+    temp_df.to_sql(name='playcount_tb', con=engine, if_exists='append', index=False)
+
+
 
 def select_user_tb(device_id):
     select_user_tb_sql = select(user_tb).where(user_tb.c.device_id == device_id)

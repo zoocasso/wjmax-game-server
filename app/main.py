@@ -5,12 +5,11 @@ sys.path.append("./")
 
 from app import db_session
 
-import json
+import asyncio
 import uvicorn
 from datetime import datetime
 from pydantic import BaseModel
 from fastapi import FastAPI, Request, HTTPException, status
-import asyncio
 
 ## fastapi 인스턴스 저장
 app = FastAPI()
@@ -48,33 +47,20 @@ async def insert_playcount(request:Request, insert_playcount_form:InsertPlayCoun
     insert_time = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
     device_id = insert_playcount_form.device_id
     count_log = insert_playcount_form.count_log
+
     try:
         # user insert
         db_session.insert_user_tb(device_id,insert_time)
         db_session.db_commit()
 
         # playcount insert
-        count_log = count_log.replace("'",'"')
-        playDatas = json.loads(count_log)["playDatas"]
-        
-        for i in range(len(playDatas)):
-            playData = playDatas[i].split("*")
-
-            title = playData[0]
-            if title == "오르트 구름":
-                title = "Oort Cloud"
-            music_key = db_session.select_music_key(title)
-            music_key_start = music_key.fetchall()[0][0]
-            
-            for j in range(8):
-                print(device_id)
-                print(music_key_start+j)
-                print(playData[j+1])
-                db_session.insert_playcount_tb(device_id,music_key_start+j,playData[j+1])
+        db_session.insert_pandas_playcount_tb(device_id,count_log)
         db_session.db_commit()
-        db_session.db_close()
     except:
         pass
+    
+    # db_session.db_commit()
+    # db_session.db_close()
 
 
 
@@ -114,4 +100,4 @@ async def main(request:Request):
     return True
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host = '127.0.0.1', port = 8000, reload=True)
+    uvicorn.run("main_copy:app", host = '127.0.0.1', port = 8000, reload=True)
