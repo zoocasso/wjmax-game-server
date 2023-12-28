@@ -1,5 +1,11 @@
+# -*- coding: utf-8 -*-
+
+import sys
+sys.path.append("./")
+
 import config
 
+import uvicorn
 import databases
 import sqlalchemy
 from fastapi import FastAPI
@@ -87,7 +93,7 @@ async def create_note(note: NoteIn):
     print('process')
     for i in range(1,101):
         query = notes.insert().values(value=i)
-        last_record_id = await database.execute(query)
+        last_record_id = database.execute(query)
     print('end')
     return {**note.dict(), "idx": last_record_id}
 
@@ -95,5 +101,8 @@ async def create_note(note: NoteIn):
 async def create_note(note: NoteIn):
     for i in range(101,201):
         query = notes.insert().values(value=i)
-        last_record_id = await database.execute(query)
+        last_record_id = database.execute(query)
     return {**note.dict(), "idx": last_record_id}
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host = '127.0.0.1', port = 8000, reload=True)
