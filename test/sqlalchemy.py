@@ -5,11 +5,14 @@ sys.path.append("./")
 
 import config
 
-import uvicorn
-import databases
-import sqlalchemy
 from fastapi import FastAPI
+import uvicorn
 from pydantic import BaseModel
+import sqlalchemy
+import databases
+
+from typing import List
+
 import time
 # async def 에서 사용시 동기적으로 강제 전환
 import asyncio
@@ -61,29 +64,29 @@ async def startup():
 async def shutdown():
     await database.disconnect()
 
-@app.get("/a")
-def a():
-    print(1)
-    time.sleep(1)
-    print(1)
-    time.sleep(1)
-    print(1)
-    time.sleep(1)
-    print(1)
-    time.sleep(1)
-    print(1)
+# @app.get("/a")
+# def a():
+#     print(1)
+#     time.sleep(1)
+#     print(1)
+#     time.sleep(1)
+#     print(1)
+#     time.sleep(1)
+#     print(1)
+#     time.sleep(1)
+#     print(1)
 
-@app.get("/b")
-def b():
-    print(2)
-    time.sleep(1)
-    print(2)
-    time.sleep(1)
-    print(2)
-    time.sleep(1)
-    print(2)
-    time.sleep(1)
-    print(2)
+# @app.get("/b")
+# def b():
+#     print(2)
+#     time.sleep(1)
+#     print(2)
+#     time.sleep(1)
+#     print(2)
+#     time.sleep(1)
+#     print(2)
+#     time.sleep(1)
+#     print(2)
 
 
 @app.post("/notes/a", response_model=Note)
@@ -93,7 +96,7 @@ async def create_note(note: NoteIn):
     print('process')
     for i in range(1,101):
         query = notes.insert().values(value=i)
-        last_record_id = database.execute(query)
+        last_record_id = await database.execute(query)
     print('end')
     return {**note.dict(), "idx": last_record_id}
 
@@ -101,7 +104,7 @@ async def create_note(note: NoteIn):
 async def create_note(note: NoteIn):
     for i in range(101,201):
         query = notes.insert().values(value=i)
-        last_record_id = database.execute(query)
+        last_record_id = await database.execute(query)
     return {**note.dict(), "idx": last_record_id}
 
 if __name__ == "__main__":
