@@ -19,7 +19,7 @@ MYSQLALCHEMY_URL = f"mysql+pymysql://{user}:{password}@{host}:{port}/{dbname}"
 engine = create_engine(MYSQLALCHEMY_URL, echo=False)
 conn = engine.connect()
 
-SessionLocal = sessionmaker(autocommit=False,autoflush=False,bind=engine)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 db = SessionLocal()
 
 metadata = MetaData()

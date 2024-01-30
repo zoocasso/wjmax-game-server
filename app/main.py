@@ -43,7 +43,7 @@ class InsertPlayCountForm(BaseModel):
 #     db_session.db_commit()
 
 @app.post("/insert_playcount")
-async def insert_playcount(request:Request, insert_playcount_form:InsertPlayCountForm):
+def insert_playcount(request:Request, insert_playcount_form:InsertPlayCountForm):
     insert_time = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
     device_id = insert_playcount_form.device_id
     count_log = insert_playcount_form.count_log
@@ -94,7 +94,7 @@ async def insert_playcount(request:Request, insert_playcount_form:InsertPlayCoun
 
 
 @app.get("/")
-async def main(request:Request):
+def main(request:Request):
     if 1 == 1:
         raise HTTPException(status_code=404, detail="Page Not Found")
     return True
