@@ -1,4 +1,6 @@
-import config
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 import json
 import pandas as pd
@@ -7,14 +9,14 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import Table, MetaData
 from sqlalchemy import insert, select
 
-user=config.DATABASE_CONFIG['user']
-password=config.DATABASE_CONFIG['password']
-host=config.DATABASE_CONFIG['host']
-port=config.DATABASE_CONFIG['port']
-dbname=config.DATABASE_CONFIG['dbname']
+user=os.environ.get('user')
+password=os.environ.get('password')
+host=os.environ.get('host')
+port=os.environ.get('port')
+dbname=os.environ.get('dbname')
 
 MYSQLALCHEMY_URL = f"mysql+pymysql://{user}:{password}@{host}:{port}/{dbname}"
-engine = create_engine(MYSQLALCHEMY_URL, echo=True)
+engine = create_engine(MYSQLALCHEMY_URL, echo=False)
 conn = engine.connect()
 
 SessionLocal = sessionmaker(autocommit=False,autoflush=False,bind=engine)
@@ -22,7 +24,7 @@ db = SessionLocal()
 
 metadata = MetaData()
 user_tb = Table("user_tb", metadata, autoload_with=engine)
-# playlog_tb = Table("playlog_tb", metadata, autoload_with=engine)
+playlog_tb = Table("playlog_tb", metadata, autoload_with=engine)
 playcount_tb = Table("playcount_tb", metadata, autoload_with=engine)
 music_tb =  Table("music_tb", metadata, autoload_with=engine)
 
