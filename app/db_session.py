@@ -19,28 +19,34 @@ MYSQLALCHEMY_URL = f"mysql+pymysql://{user}:{password}@{host}:{port}/{dbname}"
 engine = create_engine(MYSQLALCHEMY_URL, echo=False)
 conn = engine.connect()
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-db = SessionLocal()
-
 metadata = MetaData()
 user_tb = Table("user_tb", metadata, autoload_with=engine)
 playlog_tb = Table("playlog_tb", metadata, autoload_with=engine)
 playcount_tb = Table("playcount_tb", metadata, autoload_with=engine)
 music_tb =  Table("music_tb", metadata, autoload_with=engine)
 
-def insert_user_tb(device_id, insert_time):
+def get_db():
+    SessionLocal = sessionmaker(bind=engine)
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def insert_user_tb(db, device_id, insert_time):
     insert_user_tb_sql = insert(user_tb).values(device_id=device_id, insert_date =insert_time)
     db.execute(insert_user_tb_sql)
+    db.commit()
 
-def insert_playlog_tb(music_key, device_id, total_score, insert_time):
+def insert_playlog_tb(db, music_key, device_id, total_score, insert_time):
     insert_playlog_tb_sql = insert(playlog_tb).values(music_key=music_key, device_id=device_id, total_score=total_score, insert_date =insert_time)
     db.execute(insert_playlog_tb_sql)
 
-def insert_playcount_tb(device_id,music_key,count):
+def insert_playcount_tb(db, device_id,music_key,count):
     insert_playcount_tb_sql = insert(playcount_tb).values(device_id=device_id, music_key=music_key, count=count)
     db.execute(insert_playcount_tb_sql)
 
-def insert_pandas_playcount_tb(device_id,count_log):
+def insert_pandas_playcount_tb(db, device_id,count_log):
     count_log = count_log.replace("'",'"')
     playDatas = json.loads(count_log)["playDatas"]
     
@@ -79,9 +85,3 @@ def select_music_key(music_title):
     select_music_key_sql = select(music_tb.c.music_key).where(music_tb.c.name == music_title)
     result = db.execute(select_music_key_sql)
     return result
-
-def db_commit():
-    db.commit()
-
-def db_close():
-    db.close()

@@ -9,7 +9,8 @@ import asyncio
 import uvicorn
 from datetime import datetime
 from pydantic import BaseModel
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
 ## fastapi 인스턴스 저장
 app = FastAPI()
@@ -43,24 +44,19 @@ class InsertPlayCountForm(BaseModel):
 #     db_session.db_commit()
 
 @app.post("/insert_playcount")
-def insert_playcount(request:Request, insert_playcount_form:InsertPlayCountForm):
+def insert_playcount(insert_playcount_form:InsertPlayCountForm, db: Session = Depends(db_session.get_db)):
     insert_time = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
     device_id = insert_playcount_form.device_id
     count_log = insert_playcount_form.count_log
 
     try:
         # user insert
-        db_session.insert_user_tb(device_id,insert_time)
-        db_session.db_commit()
+        db_session.insert_user_tb(db, device_id,insert_time)
 
         # playcount insert
-        db_session.insert_pandas_playcount_tb(device_id,count_log)
-        db_session.db_commit()
+        db_session.insert_pandas_playcount_tb(db, device_id,count_log)
     except:
         pass
-    
-    # db_session.db_commit()
-    # db_session.db_close()
 
 
 
@@ -94,7 +90,7 @@ def insert_playcount(request:Request, insert_playcount_form:InsertPlayCountForm)
 
 
 @app.get("/")
-def main(request:Request):
+def main():
     if 1 == 1:
         raise HTTPException(status_code=404, detail="Page Not Found")
     return True
