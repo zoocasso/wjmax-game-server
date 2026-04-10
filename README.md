@@ -1,4 +1,4 @@
-# 🎹 WJMAX Backend
+# 🎹 WJMAX Backend & Database Engineering
 > **우왁굳 팬게임 '왁제이맥스(WJMAX)' 서버 구축 및 최적화**
 > 
 > 메인 개발자의 협업 요청으로 단기 투입되어, 대용량 트래픽 대응을 위한 서버 아키텍처 구축 및 보안 솔루션을 담당했습니다.
