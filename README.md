@@ -47,7 +47,7 @@ Built and operated a scalable backend stack capable of absorbing real-time traff
 ### 🏗 System Architecture
 
 > The repository contains the initial prototype code. The production deployment was structured as follows:
-**Client → Cloudflare (WAF + Proxy) → AWS EC2 (FastAPI on Docker) → AWS RDS (MySQL)**
+> **Client → Cloudflare (WAF + Proxy) → AWS EC2 (FastAPI on Docker) → AWS RDS (MySQL)**
 
 1. **Traffic Entry** — Cloudflare (WAF & Proxy)
 2. **Application Layer** — AWS EC2 running FastAPI inside Docker
@@ -93,7 +93,7 @@ Built and operated a scalable backend stack capable of absorbing real-time traff
 ### 🏗 시스템 아키텍처
 
 > 본 리포지토리에는 초기 프로토타입 코드가 포함되어 있으며, 실제 운영 환경은 아래와 같이 구성되었습니다.
-**Client → Cloudflare (WAF + Proxy) → AWS EC2 (FastAPI on Docker) → AWS RDS (MySQL)**
+> **Client → Cloudflare (WAF + Proxy) → AWS EC2 (FastAPI on Docker) → AWS RDS (MySQL)**
 
 1. **트래픽 진입** — Cloudflare (WAF & Proxy)
 2. **애플리케이션 계층** — AWS EC2에서 Docker 기반 FastAPI 구동
