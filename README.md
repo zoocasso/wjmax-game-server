@@ -2,7 +2,7 @@
 
 # 🎹 WJMAX Game Server
 
-**High-Availability Backend for a Fan Rhythm Game — 3K Peak Concurrent Users**
+**High-Availability Backend for a Fan Rhythm Game — ~2,000 Peak Concurrent Players**
 
 [![EN](https://img.shields.io/badge/Language-English-blue?style=flat-square)](#-english)
 [![KR](https://img.shields.io/badge/언어-한국어-red?style=flat-square)](#-한국어)
@@ -20,7 +20,7 @@ A production backend for **WJMAX**, a fan-made rhythm game in the Woowakgood com
 Built and operated a scalable backend stack capable of absorbing real-time traffic spikes during service peaks. Responsibilities spanned infrastructure design, edge-level security hardening, and high-volume log collection to support data-driven service monitoring.
 
 - **Role:** Backend server, security, and database engineering
-- **Scale:** Sustained 3,000+ peak concurrent users
+- **Scale:** ~300 average and ~2,000 peak concurrent players (during updates)
 - **Key Outcome:** Scalable AWS-based infrastructure hardened with a Cloudflare edge layer
 
 ### 🛠 Tech Stack
@@ -66,7 +66,7 @@ Built and operated a scalable backend stack capable of absorbing real-time traff
 서비스 피크 시간대의 실시간 트래픽을 흡수할 수 있는 확장 가능한 백엔드 스택을 구축하고 운영했습니다. 인프라 설계, 엣지 레벨 보안 강화, 대용량 로그 수집까지 서비스 모니터링 기반을 포괄적으로 담당했습니다.
 
 - **역할:** 백엔드 서버, 보안, 데이터베이스 엔지니어링
-- **규모:** 피크 동시 접속자 3,000명 이상 대응
+- **규모:** 평균 동시 접속자 약 300명, 업데이트 시 최대 약 2,000명
 - **핵심 성과:** AWS 기반 확장성 있는 인프라 구축 및 Cloudflare 엣지 계층을 통한 보안 강화
 
 ### 🛠 기술 스택
