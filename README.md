@@ -2,7 +2,7 @@
 
 # 🎹 WJMAX Game Server
 
-**High-Availability Backend for a Fan Rhythm Game — ~2,000 Peak Concurrent Players**
+**Production Backend for a Fan Rhythm Game — ~2,000 Peak Concurrent Players**
 
 [![EN](https://img.shields.io/badge/Language-English-blue?style=flat-square)](#-english)
 [![KR](https://img.shields.io/badge/언어-한국어-red?style=flat-square)](#-한국어)
@@ -13,15 +13,15 @@
 
 ## 🇺🇸 English
 
-A production backend for **WJMAX**, a fan-made rhythm game in the Woowakgood community. Joined the main developer under a short-term collaboration request to design and operate the server architecture, security layer, and database infrastructure needed to sustain high-traffic gameplay.
+A production backend for **WJMAX**, a fan-made rhythm game in the Woowakgood community (side project, Aug 2023 – Feb 2024). The team was two people: the main developer built the game, and I joined at their request as the **sole server developer**, designing and operating the server, security layer, and database.
 
 ### 📋 Project Overview
 
-Built and operated a scalable backend stack capable of absorbing real-time traffic spikes during service peaks. Responsibilities spanned infrastructure design, edge-level security hardening, and high-volume log collection to support data-driven service monitoring.
+Built and operated the backend through live service, including update-day traffic peaks. Responsibilities covered infrastructure design, a Cloudflare edge layer, and a play-log ingestion API.
 
-- **Role:** Backend server, security, and database engineering
+- **Role:** Sole server developer — backend server, security, and database
 - **Scale:** ~300 average and ~2,000 peak concurrent players (during updates)
-- **Key Outcome:** Scalable AWS-based infrastructure hardened with a Cloudflare edge layer
+- **Setup:** FastAPI on Docker (AWS EC2) with RDS MySQL, behind a Cloudflare proxy/WAF
 
 ### 🛠 Tech Stack
 
@@ -36,13 +36,13 @@ Built and operated a scalable backend stack capable of absorbing real-time traff
 
 #### 1. Infrastructure Design & Deployment
 - **AWS EC2 + Docker** — Containerized the FastAPI server to guarantee environment consistency and streamline deployment across dev and production.
-- **AWS RDS (MySQL)** — Separated the database layer onto managed RDS to secure data durability, availability, and independent scalability.
+- **AWS RDS (MySQL)** — Kept the database on managed RDS, separate from the application server.
 
 #### 2. Security & Network
-- **Cloudflare Edge Layer** — Applied DNS management and Cloudflare's WAF/proxy in front of the origin, shielding the server from external attacks and absorbing traffic bursts before they reached the application.
+- **Cloudflare Edge Layer** — Put Cloudflare DNS and its WAF/proxy in front of the origin to hide the origin server and filter malicious traffic before it reached the application.
 
-#### 3. High-Volume Log Collection
-- Operated an efficient collection pipeline for the large log volume produced during live service, laying the groundwork for data visualization and real-time service health monitoring.
+#### 3. Play-Log Collection
+- Built an API that collects gameplay logs during live service, as a basis for later analysis and service monitoring.
 
 ### 🏗 System Architecture
 
@@ -59,15 +59,15 @@ Built and operated a scalable backend stack capable of absorbing real-time traff
 
 ## 🇰🇷 한국어
 
-우왁굳 팬게임 **'왁제이맥스(WJMAX)'**의 운영 백엔드입니다. 메인 개발자의 협업 요청으로 단기 투입되어, 대규모 트래픽을 견디기 위한 서버 아키텍처, 보안 계층, 데이터베이스 인프라 설계 및 운영을 담당했습니다.
+우왁굳 팬게임 **'왁제이맥스(WJMAX)'**의 운영 백엔드입니다(개인 사이드 프로젝트, 2023.08 ~ 2024.02). 2인 팀으로, 게임은 메인 개발자가 만들고 저는 그 요청으로 합류해 **서버를 단독으로** 맡아 서버·보안 계층·데이터베이스를 설계하고 운영했습니다.
 
 ### 📋 프로젝트 개요
 
-서비스 피크 시간대의 실시간 트래픽을 흡수할 수 있는 확장 가능한 백엔드 스택을 구축하고 운영했습니다. 인프라 설계, 엣지 레벨 보안 강화, 대용량 로그 수집까지 서비스 모니터링 기반을 포괄적으로 담당했습니다.
+업데이트 날의 접속 피크를 포함해 라이브 서비스 기간 동안 백엔드를 구축·운영했습니다. 인프라 설계, Cloudflare 엣지 계층, 플레이 로그 수집 API를 담당했습니다.
 
-- **역할:** 백엔드 서버, 보안, 데이터베이스 엔지니어링
+- **역할:** 서버 단독 담당 — 백엔드 서버, 보안, 데이터베이스
 - **규모:** 평균 동시 접속자 약 300명, 업데이트 시 최대 약 2,000명
-- **핵심 성과:** AWS 기반 확장성 있는 인프라 구축 및 Cloudflare 엣지 계층을 통한 보안 강화
+- **구성:** AWS EC2의 FastAPI(Docker) + RDS MySQL, 앞단에 Cloudflare 프록시·WAF
 
 ### 🛠 기술 스택
 
@@ -82,13 +82,13 @@ Built and operated a scalable backend stack capable of absorbing real-time traff
 
 #### 1. 인프라 설계 및 배포
 - **AWS EC2 + Docker** — FastAPI 서버를 컨테이너화하여 개발·운영 환경 간 일관성을 보장하고 배포 효율을 높였습니다.
-- **AWS RDS (MySQL)** — 데이터베이스 계층을 Managed RDS로 분리하여 데이터 내구성, 가용성, 독립적인 확장성을 확보했습니다.
+- **AWS RDS (MySQL)** — 데이터베이스를 애플리케이션 서버와 분리해 관리형 RDS에 두었습니다.
 
 #### 2. 보안 및 네트워크
-- **Cloudflare 엣지 계층** — 오리진 앞단에 DNS 관리 및 Cloudflare의 WAF/Proxy를 적용하여 외부 공격으로부터 서버를 보호하고, 애플리케이션 레이어 도달 전 트래픽 버스트를 흡수했습니다.
+- **Cloudflare 엣지 계층** — 오리진 앞단에 Cloudflare DNS와 WAF/프록시를 두어 오리진 서버를 감추고, 악성 트래픽이 애플리케이션에 닿기 전에 걸러냈습니다.
 
-#### 3. 대용량 로그 수집
-- 라이브 서비스에서 발생하는 대규모 로그를 효율적으로 수집하는 파이프라인을 운영하여, 데이터 시각화 및 실시간 서비스 상태 모니터링 기반을 마련했습니다.
+#### 3. 플레이 로그 수집
+- 라이브 서비스 중 게임 플레이 로그를 수집하는 API를 만들어, 이후 분석과 서비스 모니터링의 기반을 마련했습니다.
 
 ### 🏗 시스템 아키텍처
 
