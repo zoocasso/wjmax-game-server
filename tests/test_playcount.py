@@ -7,7 +7,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite://")
 import anyio  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine, insert, inspect, select  # noqa: E402
+from sqlalchemy import create_engine, insert, inspect, make_url, select, text  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app import db_session  # noqa: E402
@@ -143,12 +143,16 @@ def test_hostile_logs_are_a_parse_error_not_a_crash(log):
 SCHEMA_SQL = Path(__file__).resolve().parent.parent / "schema.sql"
 
 
-def make_engine():
-    if not TEST_DATABASE_URL:
+def make_engine(url=TEST_DATABASE_URL):
+    if not url:
         engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         db_session.metadata.create_all(engine)
         return engine
-    engine = create_engine(TEST_DATABASE_URL)
+    # the tests drop and recreate tables that have the production names, so only a test database will do
+    database = make_url(url).database or ""
+    if not database.endswith("test"):
+        raise RuntimeError(f"TEST_DATABASE_URL must name a database ending in 'test', not {database!r}")
+    engine = create_engine(url)
     lines = SCHEMA_SQL.read_text().splitlines()
     ddl = "\n".join(line for line in lines if not line.lstrip().startswith("--"))
     with engine.begin() as conn:
@@ -345,7 +349,62 @@ def test_a_failed_write_stores_nothing(client):
     assert rows(client, db_session.report_tb) == []
 
 
+@pytest.mark.parametrize("database", ["wjmax_db", "production", None])
+def test_the_tests_refuse_a_database_not_named_for_tests(database):
+    url = "mysql+pymysql://user:pw@127.0.0.1:3306" + (f"/{database}" if database else "")
+    with pytest.raises(RuntimeError, match="ending in 'test'"):
+        make_engine(url)
+
+
+# titles that MySQL's default collation (utf8mb4_0900_ai_ci) would fold together
+LOOKALIKE_TITLES = ["Glory", "GLORY", "Cafe", "Café", "ゆめ", "ユメ"]
+
+
+def test_titles_that_differ_only_in_case_accent_or_kana_are_different_songs(client):
+    starts = {title: 101 + 8 * i for i, title in enumerate(LOOKALIKE_TITLES)}
+    with client.engine.begin() as conn:
+        conn.execute(
+            insert(db_session.music_tb),
+            [
+                {"music_key": start + j, "name": t}
+                for t, start in starts.items()
+                for j in range(CHARTS_PER_SONG)
+            ],
+        )
+    r = post(client, "dev-1", [(t, [i + 1] * 8) for i, t in enumerate(LOOKALIKE_TITLES)])
+    assert r.json()["unknown_titles"] == [] and r.json()["saved"] == 8 * len(LOOKALIKE_TITLES)
+    stored = {(row.music_key, row.count) for row in rows(client, db_session.playcount_tb)}
+    expected = {
+        (starts[t] + j, i + 1) for i, t in enumerate(LOOKALIKE_TITLES) for j in range(CHARTS_PER_SONG)
+    }
+    assert stored == expected
+
+
+@pytest.mark.parametrize(
+    "device_id, report_id",
+    [("DEV-1", "r-1"), ("dev-1", "R-1"), ("dev-1 ", "r-1")],
+)
+def test_ids_that_differ_only_in_case_or_a_trailing_space_are_not_retries(client, device_id, report_id):
+    post(client, "dev-1", [("Song A", [1] * 8)], report_id="r-1")
+    other = post(client, device_id, [("Song A", [1] * 8)], report_id=report_id)
+    assert other.json()["duplicate"] is False
+    assert len(rows(client, db_session.playcount_tb)) == 16
+
+
 # ---------- MySQL only (the CI job with a MySQL 8 service) ----------
+
+
+@needs_mysql
+def test_text_keys_compare_exactly_in_schema_sql(client):
+    query = text(
+        "SELECT CONCAT(table_name, '.', column_name), collation_name FROM information_schema.columns"
+        " WHERE table_schema = DATABASE() AND data_type = 'varchar'"
+    )
+    with client.engine.connect() as conn:
+        found = dict(conn.execute(query).all())
+    expected = ["user_tb.device_id", "music_tb.name", "report_tb.device_id", "report_tb.report_id"]
+    expected += ["playcount_tb.device_id", "playcount_tb.report_id"]
+    assert found == dict.fromkeys(expected, "utf8mb4_0900_bin")
 
 
 @needs_mysql

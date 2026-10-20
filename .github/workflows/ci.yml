@@ -17,13 +17,18 @@ jobs:
       - run: ruff format --check .
       - run: python -m pytest -q
 
-  # the same tests on MySQL 8 with the tables from schema.sql: INSERT IGNORE, the report_tb key and
-  # row locks behave differently from SQLite, and schema.sql is checked against the code
+  # the same tests on MySQL 8.0 and 8.4 with the tables from schema.sql: INSERT IGNORE, the report_tb
+  # key, collations and row locks behave differently from SQLite, and schema.sql is checked against
+  # the code. The job fails if any test is skipped, so a missing database cannot pass as green.
   mysql:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mysql: ["8.0", "8.4"]
     services:
       mysql:
-        image: mysql:8.4
+        image: mysql:${{ matrix.mysql }}
         env:
           MYSQL_ROOT_PASSWORD: ci-only
           MYSQL_DATABASE: wjmax_test
@@ -40,4 +45,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
-      - run: python -m pytest -q
+      - name: pytest (no test may be skipped)
+        shell: bash
+        run: |
+          python -m pytest -q -rs | tee pytest.log
+          ! grep -q SKIPPED pytest.log

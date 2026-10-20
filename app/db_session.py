@@ -28,11 +28,20 @@ from app.config import get_settings
 
 metadata = MetaData()
 
+
+def exact_string(length: int) -> String:
+    """A string compared byte for byte: on MySQL utf8mb4_0900_bin instead of the default
+    utf8mb4_0900_ai_ci, which treats "GLORY" as "Glory", "Café" as "Cafe" and "ユメ" as "ゆめ".
+    SQLite already compares exactly and has no such collation."""
+    return String(length).with_variant(String(length, collation="utf8mb4_0900_bin"), "mysql")
+
+
 user_tb = Table(
     "user_tb",
     metadata,
-    Column("device_id", String(64), primary_key=True),
+    Column("device_id", exact_string(64), primary_key=True),
     Column("insert_date", DateTime, nullable=False),  # first time the device was seen
+    mysql_charset="utf8mb4",
 )
 
 # one row per chart: every song has CHARTS_PER_SONG consecutive keys that share its name
@@ -40,7 +49,8 @@ music_tb = Table(
     "music_tb",
     metadata,
     Column("music_key", Integer, primary_key=True),
-    Column("name", String(100), nullable=False, index=True),
+    Column("name", exact_string(100), nullable=False, index=True),
+    mysql_charset="utf8mb4",
 )
 
 # one row per report a device sends; report_id is the client's id for the report (it lets a retry
@@ -48,10 +58,11 @@ music_tb = Table(
 report_tb = Table(
     "report_tb",
     metadata,
-    Column("device_id", String(64), ForeignKey("user_tb.device_id"), primary_key=True),
-    Column("report_id", String(64), primary_key=True),
+    Column("device_id", exact_string(64), ForeignKey("user_tb.device_id"), primary_key=True),
+    Column("report_id", exact_string(64), primary_key=True),
     # microseconds, so the snapshots of one device sort even when two arrive in the same second
     Column("reported_at", DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql"), nullable=False),
+    mysql_charset="utf8mb4",
 )
 
 # play counts are appended as snapshots, one row per chart per report
@@ -60,12 +71,13 @@ playcount_tb = Table(
     metadata,
     # SQLite only auto-increments an INTEGER primary key
     Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
-    Column("device_id", String(64), nullable=False),
-    Column("report_id", String(64), nullable=False),
+    Column("device_id", exact_string(64), nullable=False),
+    Column("report_id", exact_string(64), nullable=False),
     Column("music_key", Integer, nullable=False),
     Column("count", Integer, nullable=False),
     ForeignKeyConstraint(["device_id", "report_id"], ["report_tb.device_id", "report_tb.report_id"]),
     Index("ix_playcount_tb_report", "device_id", "report_id"),
+    mysql_charset="utf8mb4",
 )
 
 
