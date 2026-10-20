@@ -10,5 +10,6 @@ RUN useradd --create-home app
 USER app
 
 EXPOSE 8000
-# behind Cloudflare: trust the forwarded client address
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+# The app never uses the client address, so X-Forwarded-For is ignored rather than trusted:
+# requests reach the container from Cloudflare, not from a proxy on this host.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]

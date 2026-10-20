@@ -7,7 +7,21 @@ database is briefly unreachable and the schema lives in the code (see schema.sql
 from collections.abc import Iterator
 from functools import lru_cache
 
-from sqlalchemy import Column, DateTime, Engine, Integer, MetaData, String, Table, create_engine
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    Engine,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    create_engine,
+)
+from sqlalchemy.dialects import mysql
 from sqlalchemy.engine import Connection
 
 from app.config import get_settings
@@ -29,13 +43,29 @@ music_tb = Table(
     Column("name", String(100), nullable=False, index=True),
 )
 
+# one row per report a device sends; report_id is the client's id for the report (it lets a retry
+# be recognised) or a UUID the server made up when the client sent none
+report_tb = Table(
+    "report_tb",
+    metadata,
+    Column("device_id", String(64), ForeignKey("user_tb.device_id"), primary_key=True),
+    Column("report_id", String(64), primary_key=True),
+    # microseconds, so the snapshots of one device sort even when two arrive in the same second
+    Column("reported_at", DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql"), nullable=False),
+)
+
 # play counts are appended as snapshots, one row per chart per report
 playcount_tb = Table(
     "playcount_tb",
     metadata,
-    Column("device_id", String(64), nullable=False, index=True),
+    # SQLite only auto-increments an INTEGER primary key
+    Column("id", BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True),
+    Column("device_id", String(64), nullable=False),
+    Column("report_id", String(64), nullable=False),
     Column("music_key", Integer, nullable=False),
     Column("count", Integer, nullable=False),
+    ForeignKeyConstraint(["device_id", "report_id"], ["report_tb.device_id", "report_tb.report_id"]),
+    Index("ix_playcount_tb_report", "device_id", "report_id"),
 )
 
 
