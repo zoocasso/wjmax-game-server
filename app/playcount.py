@@ -6,20 +6,38 @@ The string uses single quotes, so it is read as a Python literal when it is not 
 """
 
 import ast
+import io
 import json
+import re
+import tokenize
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import func, insert, select
 from sqlalchemy.engine import Connection
 
-from app.db_session import music_tb, playcount_tb, user_tb
+from app.db_session import music_tb, playcount_tb, report_tb, user_tb
 
 CHARTS_PER_SONG = 8
 MAX_SONGS = 1000
+# playcount_tb.count is a signed MySQL INT
+MAX_COUNT = 2**31 - 1
+# a log is an object holding a list of strings (two levels); the rest is slack for extra fields
+MAX_DEPTH = 4
 
 # titles the client spells differently from music_tb
 TITLE_ALIASES = {"오르트 구름": "Oort Cloud"}
+
+# ASCII digits only: int() alone also takes "+2", "1_000", " 3" and non-ASCII digits
+COUNT_PATTERN = re.compile(r"[0-9]{1,10}")
+
+# the tokens a count log is made of; see check_shape
+_OPEN, _CLOSE, _SEPARATORS = {"{", "["}, {"}", "]"}, {":", ","}
+_KEYWORDS = {"True", "False", "None", "true", "false", "null"}
+_LAYOUT = {tokenize.NEWLINE, tokenize.NL, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
+# a bracket after a value would be a subscript ("None[0][0]..."), so it may only follow these
+_BEFORE_OPEN = {None, *_OPEN, *_SEPARATORS}
+MAX_NUMBER_CHARS = 20
 
 
 class CountLogError(ValueError):
@@ -32,14 +50,62 @@ class SongCounts:
     counts: tuple[int, ...]
 
 
-def parse_count_log(count_log: str) -> list[SongCounts]:
+@dataclass(frozen=True)
+class SaveResult:
+    saved: int
+    unknown_titles: list[str]
+    duplicate: bool
+
+
+def _tokens(count_log: str):
     try:
-        data = json.loads(count_log)
-    except json.JSONDecodeError:
-        try:
-            data = ast.literal_eval(count_log)
-        except (ValueError, SyntaxError) as e:
-            raise CountLogError("count_log is neither JSON nor a literal") from e
+        yield from tokenize.generate_tokens(io.StringIO(count_log).readline)
+    except (tokenize.TokenError, SyntaxError) as e:
+        raise CountLogError("count_log is neither JSON nor a literal") from e
+
+
+def check_shape(count_log: str) -> None:
+    """Lets through only objects and lists of strings, numbers and keywords, MAX_DEPTH levels deep.
+
+    json.loads and ast.literal_eval recurse while they parse, so "[" * 150000, "-" * 150000 + "1"
+    or "None" + "[0]" * 100000 make them raise RecursionError or MemoryError instead of a parse
+    error. The tokenizer does not recurse, and this loop stops at the first token a count log
+    cannot contain: operators, parentheses, subscripts, names, prefixed strings or f-strings.
+    """
+    depth, previous = 0, None
+    for tok in _tokens(count_log):
+        if tok.type in _LAYOUT:
+            continue
+        if tok.type == tokenize.OP and tok.string in _OPEN:
+            depth += 1
+            if previous not in _BEFORE_OPEN or depth > MAX_DEPTH:
+                raise CountLogError(f"count_log must be objects and lists at most {MAX_DEPTH} deep")
+        elif tok.type == tokenize.OP and tok.string in _CLOSE:
+            depth -= 1
+        elif not (
+            (tok.type == tokenize.OP and tok.string in _SEPARATORS)
+            or (tok.type == tokenize.STRING and tok.string[0] in "'\"")
+            or (tok.type == tokenize.NAME and tok.string in _KEYWORDS)
+            or (tok.type == tokenize.NUMBER and len(tok.string) <= MAX_NUMBER_CHARS)
+        ):
+            raise CountLogError(f"count_log may not contain {tok.string[:20]!r}")
+        previous = tok.string if tok.type == tokenize.OP else "value"
+
+
+def _load(count_log: str):
+    try:
+        return json.loads(count_log)
+    except ValueError:
+        return ast.literal_eval(count_log)
+
+
+def parse_count_log(count_log: str) -> list[SongCounts]:
+    check_shape(count_log)
+    try:
+        data = _load(count_log)
+    # TypeError: an unhashable key such as {[]: 1}; the rest is kept in case check_shape misses one
+    except (ValueError, TypeError, SyntaxError, RecursionError, MemoryError) as e:
+        raise CountLogError("count_log is neither JSON nor a literal") from e
     if not isinstance(data, dict) or not isinstance(data.get("playDatas"), list):
         raise CountLogError("count_log has no playDatas list")
     entries = data["playDatas"]
@@ -52,15 +118,14 @@ def parse_count_log(count_log: str) -> list[SongCounts]:
             raise CountLogError(f"playDatas[{i}] is not a string")
         # the title itself may contain '*', so the counts are taken from the right
         parts = entry.rsplit("*", CHARTS_PER_SONG)
-        if len(parts) != CHARTS_PER_SONG + 1 or not parts[0]:
-            raise CountLogError(f"playDatas[{i}] needs a title and {CHARTS_PER_SONG} counts")
-        try:
-            counts = tuple(int(c) for c in parts[1:])
-        except ValueError as e:
-            raise CountLogError(f"playDatas[{i}] has a count that is not an integer") from e
-        if any(c < 0 for c in counts):
-            raise CountLogError(f"playDatas[{i}] has a negative count")
         title = parts[0].strip()
+        if len(parts) != CHARTS_PER_SONG + 1 or not title:
+            raise CountLogError(f"playDatas[{i}] needs a title and {CHARTS_PER_SONG} counts")
+        if not all(COUNT_PATTERN.fullmatch(c) for c in parts[1:]):
+            raise CountLogError(f"playDatas[{i}] has a count that is not a non-negative integer")
+        counts = tuple(int(c) for c in parts[1:])
+        if max(counts) > MAX_COUNT:
+            raise CountLogError(f"playDatas[{i}] has a count above {MAX_COUNT}")
         songs.append(SongCounts(TITLE_ALIASES.get(title, title), counts))
     return songs
 
@@ -77,31 +142,47 @@ def first_chart_keys(conn: Connection, titles: set[str]) -> dict[str, int]:
     return {name: key for name, key in rows}
 
 
-def save_play_counts(conn: Connection, device_id: str, songs: list[SongCounts]) -> tuple[int, list[str]]:
-    """Registers the device if it is new and appends one row per chart.
+def insert_ignore(table):
+    """An INSERT that skips a row whose key is already there, in MySQL and in SQLite."""
+    return insert(table).prefix_with("IGNORE", dialect="mysql").prefix_with("OR IGNORE", dialect="sqlite")
 
-    Runs inside the caller's transaction, so either everything is stored or nothing is.
-    Returns the number of rows stored and the titles that are not in music_tb.
+
+def save_play_counts(conn: Connection, device_id: str, report_id: str, songs: list[SongCounts]) -> SaveResult:
+    """Registers the device if it is new, records the report and appends one row per chart.
+
+    Runs inside the caller's transaction, so either everything is stored or nothing is. A report id
+    the device has sent before marks a retry: nothing is written and the result counts the rows the
+    first delivery stored.
     """
     now = datetime.now(UTC).replace(tzinfo=None)
     # the first report of a device creates it; later reports leave its first-seen time alone
-    conn.execute(
-        insert(user_tb)
-        .prefix_with("IGNORE", dialect="mysql")
-        .prefix_with("OR IGNORE", dialect="sqlite")
-        .values(device_id=device_id, insert_date=now)
-    )
+    conn.execute(insert_ignore(user_tb).values(device_id=device_id, insert_date=now))
 
     keys = first_chart_keys(conn, {s.title for s in songs})
-    rows, unknown = [], []
-    for song in songs:
-        start = keys.get(song.title)
-        if start is None:
-            unknown.append(song.title)
-            continue
-        rows += [
-            {"device_id": device_id, "music_key": start + j, "count": c} for j, c in enumerate(song.counts)
-        ]
+    unknown = [s.title for s in songs if s.title not in keys]
+
+    # (device_id, report_id) is report_tb's primary key: of two concurrent deliveries of one report,
+    # the second waits for the first to commit and then inserts nothing
+    inserted = conn.execute(
+        insert_ignore(report_tb).values(device_id=device_id, report_id=report_id, reported_at=now)
+    ).rowcount
+    if not inserted:
+        # a locking read sees the first delivery's rows even when this transaction's snapshot predates
+        # its commit (MySQL's REPEATABLE READ); SQLite has no row locks and ignores it
+        stored = conn.execute(
+            select(func.count())
+            .select_from(playcount_tb)
+            .where(playcount_tb.c.device_id == device_id, playcount_tb.c.report_id == report_id)
+            .with_for_update(read=True)
+        ).scalar_one()
+        return SaveResult(stored, unknown, duplicate=True)
+
+    rows = [
+        {"device_id": device_id, "report_id": report_id, "music_key": keys[song.title] + j, "count": c}
+        for song in songs
+        if song.title in keys
+        for j, c in enumerate(song.counts)
+    ]
     if rows:
         conn.execute(insert(playcount_tb), rows)
-    return len(rows), unknown
+    return SaveResult(len(rows), unknown, duplicate=False)

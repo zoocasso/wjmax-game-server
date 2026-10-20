@@ -16,3 +16,28 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: python -m pytest -q
+
+  # the same tests on MySQL 8 with the tables from schema.sql: INSERT IGNORE, the report_tb key and
+  # row locks behave differently from SQLite, and schema.sql is checked against the code
+  mysql:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only
+          MYSQL_DATABASE: wjmax_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-only --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      TEST_DATABASE_URL: mysql+pymysql://root:ci-only@127.0.0.1:3306/wjmax_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q

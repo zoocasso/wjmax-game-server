@@ -1,15 +1,29 @@
 import os
+import threading
+from pathlib import Path
 
 os.environ.setdefault("DATABASE_URL", "sqlite://")
 
+import anyio  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine, insert, select  # noqa: E402
+from sqlalchemy import create_engine, insert, inspect, select  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app import db_session  # noqa: E402
-from app.main import app  # noqa: E402
-from app.playcount import CHARTS_PER_SONG, CountLogError, parse_count_log  # noqa: E402
+from app.main import MAX_BODY_BYTES, app  # noqa: E402
+from app.playcount import (  # noqa: E402
+    CHARTS_PER_SONG,
+    MAX_COUNT,
+    CountLogError,
+    SongCounts,
+    parse_count_log,
+    save_play_counts,
+)
+
+# set in CI to run the API tests against MySQL as well; the tables then come from schema.sql
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+needs_mysql = pytest.mark.skipif(not TEST_DATABASE_URL, reason="needs MySQL (TEST_DATABASE_URL)")
 
 
 def entry(title, counts):
@@ -31,6 +45,11 @@ def test_reads_json_too():
     assert parse_count_log(log)[0].counts == (1,) * 8
 
 
+def test_extra_fields_with_plain_values_are_allowed():
+    log = '{"playDatas": ["' + entry("Song A", [1] * 8) + '"], "version": 3, "debug": false, "note": null}'
+    assert len(parse_count_log(log)) == 1
+
+
 def test_a_title_may_contain_an_apostrophe_or_a_star():
     log = repr({"playDatas": [entry("Don't*Stop", [2] * 8)]})
     assert parse_count_log(log)[0].title == "Don't*Stop"
@@ -41,15 +60,29 @@ def test_known_alias_is_mapped():
     assert parse_count_log(log)[0].title == "Oort Cloud"
 
 
+def test_the_largest_count_mysql_int_holds_is_accepted():
+    log = repr({"playDatas": [entry("Song A", [MAX_COUNT] * 8)]})
+    assert parse_count_log(log)[0].counts == (MAX_COUNT,) * 8
+
+
+def test_a_title_is_stripped():
+    log = repr({"playDatas": [entry("  Song A ", [0] * 8)]})
+    assert parse_count_log(log)[0].title == "Song A"
+
+
 @pytest.mark.parametrize(
     "log",
     [
         "not a log",
+        "",
         "{'nothing': []}",
         repr({"playDatas": ["Song A*1*2"]}),
         repr({"playDatas": [entry("Song A", ["x"] * 8)]}),
         repr({"playDatas": [entry("Song A", [-1] * 8)]}),
         repr({"playDatas": [1]}),
+        repr({"playDatas": [entry("", [1] * 8)]}),
+        repr({"playDatas": [entry("   ", [1] * 8)]}),
+        repr({"playDatas": [entry("\t", [1] * 8)]}),
     ],
 )
 def test_rejects_malformed_logs(log):
@@ -57,13 +90,79 @@ def test_rejects_malformed_logs(log):
         parse_count_log(log)
 
 
-# ---------- API, on an in-memory database ----------
+@pytest.mark.parametrize(
+    "count",
+    [
+        "+2",  # int() takes these four
+        "1_000",
+        " 3",
+        "٣",  # ARABIC-INDIC DIGIT THREE
+        "",
+        "1.0",
+        str(MAX_COUNT + 1),  # no longer fits a MySQL INT
+        "99999999999",
+        "9" * 5000,  # past Python's int() digit limit
+    ],
+)
+def test_a_count_must_be_ascii_digits_within_mysql_int(count):
+    log = repr({"playDatas": ["Song A*" + "*".join(["0"] * 7 + [count])]})
+    with pytest.raises(CountLogError):
+        parse_count_log(log)
+
+
+# inputs that used to escape as RecursionError, MemoryError, TypeError or a bare ValueError (a 500)
+HOSTILE_LOGS = {
+    "deep brackets": "[" * 150_000,
+    "deep braces": "{" * 150_000,
+    "deep parentheses": "(" * 150_000,
+    "unary minus chain": "-" * 150_000 + "1",
+    "subscript chain": "None" + "[0]" * 100_000,
+    "string subscript chain": "'a'" + "[0]" * 100_000,
+    "f-string": "f'{" + "[" * 1000 + "]" * 1000 + "}'",
+    "unhashable key": "{[]: 1}",
+    "set of dicts": "{{}}",
+    "huge JSON number": '{"playDatas": [], "n": ' + "1" * 5000 + "}",
+    "nested past the limit": "{'playDatas': [[[[['x']]]]]}",
+    "bytes": "{'playDatas': [b'x']}",
+    "name": "{'playDatas': [__import__]}",
+    "call": "{'playDatas': [print()]}",
+    "null byte": "{'playDatas': ['\x00']}",
+    "unterminated string": "{'playDatas': ['x]}",
+    "unbalanced": "{'playDatas': ['x']]}",
+}
+
+
+@pytest.mark.parametrize("log", HOSTILE_LOGS.values(), ids=HOSTILE_LOGS.keys())
+def test_hostile_logs_are_a_parse_error_not_a_crash(log):
+    with pytest.raises(CountLogError):
+        parse_count_log(log)
+
+
+# ---------- API, on SQLite in memory (or on MySQL when TEST_DATABASE_URL is set) ----------
+
+SCHEMA_SQL = Path(__file__).resolve().parent.parent / "schema.sql"
+
+
+def make_engine():
+    if not TEST_DATABASE_URL:
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        db_session.metadata.create_all(engine)
+        return engine
+    engine = create_engine(TEST_DATABASE_URL)
+    lines = SCHEMA_SQL.read_text().splitlines()
+    ddl = "\n".join(line for line in lines if not line.lstrip().startswith("--"))
+    with engine.begin() as conn:
+        for table in reversed(db_session.metadata.sorted_tables):
+            conn.exec_driver_sql(f"DROP TABLE IF EXISTS {table.name}")
+        for statement in ddl.split(";"):
+            if statement.strip():
+                conn.exec_driver_sql(statement)
+    return engine
 
 
 @pytest.fixture
 def client(monkeypatch):
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    db_session.metadata.create_all(engine)
+    engine = make_engine()
     with engine.begin() as conn:
         # two songs with eight charts each; "Song B" starts at 9
         conn.execute(
@@ -79,24 +178,69 @@ def client(monkeypatch):
     with TestClient(app) as c:
         c.engine = engine
         yield c
+    engine.dispose()
 
 
-def post(client, device_id, songs):
+def post(client, device_id, songs, **extra):
     log = repr({"playDatas": [entry(t, c) for t, c in songs]})
-    return client.post("/insert_playcount", json={"device_id": device_id, "count_log": log})
+    return client.post("/insert_playcount", json={"device_id": device_id, "count_log": log, **extra})
 
 
 def rows(client, table):
     with client.engine.connect() as conn:
-        return conn.execute(select(table)).all()
+        return conn.execute(select(table).order_by(*table.primary_key)).all()
 
 
 def test_stores_one_row_per_chart(client):
     r = post(client, "dev-1", [("Song A", range(8)), ("Song B", [5] * 8)])
     assert r.status_code == 200
-    assert r.json() == {"saved": 16, "unknown_titles": []}
-    stored = {(m, c) for _, m, c in rows(client, db_session.playcount_tb)}
+    body = r.json()
+    assert (body["saved"], body["unknown_titles"], body["duplicate"]) == (16, [], False)
+    stored = {(row.music_key, row.count) for row in rows(client, db_session.playcount_tb)}
     assert stored == {(1 + j, j) for j in range(8)} | {(9 + j, 5) for j in range(8)}
+
+
+def test_the_request_the_client_sends_today_still_works(client):
+    # no report_id: the server makes one up, so the report is stored and can be told apart
+    r = post(client, "dev-1", [("Song A", [1] * 8)])
+    assert r.status_code == 200
+    [report] = rows(client, db_session.report_tb)
+    assert report.report_id == r.json()["report_id"]
+    assert report.reported_at is not None
+    assert {row.report_id for row in rows(client, db_session.playcount_tb)} == {report.report_id}
+
+
+def test_reports_are_kept_apart_and_in_order(client):
+    first = post(client, "dev-1", [("Song A", [1] * 8)]).json()["report_id"]
+    second = post(client, "dev-1", [("Song A", [2] * 8)]).json()["report_id"]
+    assert first != second
+    reports = sorted(rows(client, db_session.report_tb), key=lambda r: r.reported_at)
+    assert [r.report_id for r in reports] == [first, second]
+    by_report = {}
+    for row in rows(client, db_session.playcount_tb):
+        by_report.setdefault(row.report_id, set()).add(row.count)
+    assert by_report == {first: {1}, second: {2}}
+
+
+def test_a_retried_report_is_stored_once(client):
+    first = post(client, "dev-1", [("Song A", [1] * 8)], report_id="r-1")
+    retry = post(client, "dev-1", [("Song A", [1] * 8)], report_id="r-1")
+    assert first.json() == {"saved": 8, "unknown_titles": [], "report_id": "r-1", "duplicate": False}
+    assert retry.json() == {"saved": 8, "unknown_titles": [], "report_id": "r-1", "duplicate": True}
+    assert len(rows(client, db_session.report_tb)) == 1
+    assert len(rows(client, db_session.playcount_tb)) == 8
+
+
+def test_a_report_id_belongs_to_one_device(client):
+    post(client, "dev-1", [("Song A", [1] * 8)], report_id="r-1")
+    other = post(client, "dev-2", [("Song A", [1] * 8)], report_id="r-1")
+    assert other.json()["duplicate"] is False
+    assert len(rows(client, db_session.playcount_tb)) == 16
+
+
+@pytest.mark.parametrize("report_id", ["", "x" * 65, "has space", "semi;colon"])
+def test_a_bad_report_id_is_rejected(client, report_id):
+    assert post(client, "dev-1", [("Song A", [1] * 8)], report_id=report_id).status_code == 422
 
 
 def test_a_device_is_registered_once(client):
@@ -110,7 +254,7 @@ def test_a_device_is_registered_once(client):
 
 def test_unknown_titles_are_reported_not_stored(client):
     r = post(client, "dev-1", [("Song A", [1] * 8), ("No Such Song", [1] * 8)])
-    assert r.json() == {"saved": 8, "unknown_titles": ["No Such Song"]}
+    assert (r.json()["saved"], r.json()["unknown_titles"]) == (8, ["No Such Song"])
 
 
 def test_a_malformed_log_is_rejected_and_nothing_is_stored(client):
@@ -119,9 +263,66 @@ def test_a_malformed_log_is_rejected_and_nothing_is_stored(client):
     assert rows(client, db_session.user_tb) == []
 
 
+@pytest.mark.parametrize("name", ["deep brackets", "unary minus chain", "subscript chain", "unhashable key"])
+def test_a_hostile_log_is_a_422(client, name):
+    r = client.post("/insert_playcount", json={"device_id": "dev-1", "count_log": HOSTILE_LOGS[name]})
+    assert r.status_code == 422
+    assert rows(client, db_session.user_tb) == []
+
+
+def test_a_count_too_big_for_mysql_is_a_422(client):
+    r = post(client, "dev-1", [("Song A", [99999999999] * 8)])
+    assert r.status_code == 422
+    assert rows(client, db_session.playcount_tb) == []
+
+
 def test_device_id_is_required(client):
     r = client.post("/insert_playcount", json={"device_id": "", "count_log": "{}"})
     assert r.status_code == 422
+
+
+def test_an_oversized_body_is_refused_from_its_content_length(client):
+    body = b"x" * (MAX_BODY_BYTES + 1)
+    r = client.post("/insert_playcount", content=body, headers={"Content-Type": "application/json"})
+    assert r.status_code == 413
+
+
+def test_an_oversized_chunked_body_is_refused(client):
+    chunks = (b"x" * 65536 for _ in range(50))  # no Content-Length, about 3 MB in all
+    r = client.post("/insert_playcount", content=chunks, headers={"Content-Type": "application/json"})
+    assert r.status_code == 413
+    assert rows(client, db_session.user_tb) == []
+
+
+def test_a_chunked_body_stops_being_read_at_the_limit():
+    # driven over raw ASGI, because TestClient buffers a streamed body before the app sees it
+    chunk, pulled, sent = b"x" * 65536, 0, []
+
+    async def receive():
+        nonlocal pulled
+        pulled += 1
+        return {"type": "http.request", "body": chunk, "more_body": pulled < 1000}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/insert_playcount",
+        "raw_path": b"/insert_playcount",
+        "root_path": "",
+        "query_string": b"",
+        "headers": [(b"content-type", b"application/json")],
+        "client": ("127.0.0.1", 1),
+        "server": ("testserver", 80),
+    }
+    anyio.run(app, scope, receive, send)
+    assert sent[0]["status"] == 413
+    assert pulled == MAX_BODY_BYTES // len(chunk) + 1
 
 
 def test_health_check(client):
@@ -134,10 +335,47 @@ def test_root_and_docs_are_not_exposed(client):
 
 
 def test_a_failed_write_stores_nothing(client):
-    # the play counts cannot be written, so the device registered in the same transaction is rolled back
+    # the play counts cannot be written, so the device and the report are rolled back with them
     with client.engine.begin() as conn:
         conn.exec_driver_sql("DROP TABLE playcount_tb")
     failing = TestClient(app, raise_server_exceptions=False)
     r = post(failing, "dev-1", [("Song A", [1] * 8)])
     assert r.status_code == 500
     assert rows(client, db_session.user_tb) == []
+    assert rows(client, db_session.report_tb) == []
+
+
+# ---------- MySQL only (the CI job with a MySQL 8 service) ----------
+
+
+@needs_mysql
+def test_schema_sql_declares_the_tables_the_code_uses(client):
+    found = inspect(client.engine)
+    for table in db_session.metadata.sorted_tables:
+        assert [c["name"] for c in found.get_columns(table.name)] == list(table.c.keys())
+        primary_key = found.get_pk_constraint(table.name)["constrained_columns"]
+        assert primary_key == list(table.primary_key.columns.keys())
+
+
+@needs_mysql
+def test_concurrent_deliveries_of_one_report_store_it_once(client):
+    post(client, "dev-1", [("Song A", [1] * 8)])  # the device already exists
+    songs = [SongCounts("Song A", (2,) * 8)]
+    second = {}
+
+    def deliver_again():
+        with client.engine.begin() as conn:
+            second["result"] = save_play_counts(conn, "dev-1", "r-1", songs)
+
+    with client.engine.connect() as conn:
+        conn.begin()
+        save_play_counts(conn, "dev-1", "r-1", songs)
+        thread = threading.Thread(target=deliver_again)
+        thread.start()
+        thread.join(timeout=2)
+        assert thread.is_alive(), "the second delivery should wait for the first one's commit"
+        conn.commit()
+    thread.join(timeout=30)
+    assert second["result"].duplicate is True
+    assert second["result"].saved == 8
+    assert len([r for r in rows(client, db_session.playcount_tb) if r.report_id == "r-1"]) == 8
