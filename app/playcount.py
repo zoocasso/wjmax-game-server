@@ -6,6 +6,7 @@ The string uses single quotes, so it is read as a Python literal when it is not 
 """
 
 import ast
+import hashlib
 import io
 import json
 import re
@@ -30,6 +31,9 @@ TITLE_ALIASES = {"오르트 구름": "Oort Cloud"}
 
 # ASCII digits only: int() alone also takes "+2", "1_000", " 3" and non-ASCII digits
 COUNT_PATTERN = re.compile(r"[0-9]{1,10}")
+# an escape such as "\ud800" in the log decodes to half of a surrogate pair, which UTF-8 (and so MySQL
+# and the JSON response) cannot hold
+SURROGATE = re.compile("[\ud800-\udfff]")
 
 # the tokens a count log is made of; see check_shape
 _OPEN, _CLOSE, _SEPARATORS = {"{", "["}, {"}", "]"}, {":", ","}
@@ -42,6 +46,10 @@ MAX_NUMBER_CHARS = 20
 
 class CountLogError(ValueError):
     """The count log could not be read."""
+
+
+class ReportConflict(Exception):
+    """A report id the device has used before, sent again with different play counts."""
 
 
 @dataclass(frozen=True)
@@ -121,6 +129,8 @@ def parse_count_log(count_log: str) -> list[SongCounts]:
         title = parts[0].strip()
         if len(parts) != CHARTS_PER_SONG + 1 or not title:
             raise CountLogError(f"playDatas[{i}] needs a title and {CHARTS_PER_SONG} counts")
+        if SURROGATE.search(title):
+            raise CountLogError(f"playDatas[{i}] has a title that is not valid Unicode text")
         if not all(COUNT_PATTERN.fullmatch(c) for c in parts[1:]):
             raise CountLogError(f"playDatas[{i}] has a count that is not a non-negative integer")
         counts = tuple(int(c) for c in parts[1:])
@@ -128,6 +138,12 @@ def parse_count_log(count_log: str) -> list[SongCounts]:
             raise CountLogError(f"playDatas[{i}] has a count above {MAX_COUNT}")
         songs.append(SongCounts(TITLE_ALIASES.get(title, title), counts))
     return songs
+
+
+def counts_digest(songs: list[SongCounts]) -> str:
+    """SHA-256 of the play counts as parsed, so the same report sent in another quoting style matches."""
+    canonical = json.dumps([[s.title, *s.counts] for s in songs], ensure_ascii=False)
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def first_chart_keys(conn: Connection, titles: set[str]) -> dict[str, int]:
@@ -152,9 +168,11 @@ def save_play_counts(conn: Connection, device_id: str, report_id: str, songs: li
 
     Runs inside the caller's transaction, so either everything is stored or nothing is. A report id
     the device has sent before marks a retry: nothing is written and the result counts the rows the
-    first delivery stored.
+    first delivery stored. If the play counts differ from the first delivery's, the id has been reused
+    for another report and ReportConflict is raised.
     """
     now = datetime.now(UTC).replace(tzinfo=None)
+    digest = counts_digest(songs)
     # the first report of a device creates it; later reports leave its first-seen time alone
     conn.execute(insert_ignore(user_tb).values(device_id=device_id, insert_date=now))
 
@@ -164,11 +182,20 @@ def save_play_counts(conn: Connection, device_id: str, report_id: str, songs: li
     # (device_id, report_id) is report_tb's primary key: of two concurrent deliveries of one report,
     # the second waits for the first to commit and then inserts nothing
     inserted = conn.execute(
-        insert_ignore(report_tb).values(device_id=device_id, report_id=report_id, reported_at=now)
+        insert_ignore(report_tb).values(
+            device_id=device_id, report_id=report_id, reported_at=now, counts_sha256=digest
+        )
     ).rowcount
     if not inserted:
-        # a locking read sees the first delivery's rows even when this transaction's snapshot predates
-        # its commit (MySQL's REPEATABLE READ); SQLite has no row locks and ignores it
+        # locking reads see the first delivery's rows even when this transaction's snapshot predates
+        # its commit (MySQL's REPEATABLE READ); SQLite has no row locks and ignores them
+        first_digest = conn.execute(
+            select(report_tb.c.counts_sha256)
+            .where(report_tb.c.device_id == device_id, report_tb.c.report_id == report_id)
+            .with_for_update(read=True)
+        ).scalar_one()
+        if first_digest != digest:
+            raise ReportConflict(f"report_id {report_id} was already used for other play counts")
         stored = conn.execute(
             select(func.count())
             .select_from(playcount_tb)
