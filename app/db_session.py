@@ -4,10 +4,10 @@ The tables are declared here instead of reflected at import time, so the app sta
 database is briefly unreachable and the schema lives in the code (see schema.sql for the DDL).
 """
 
-from collections.abc import Iterator
 from functools import lru_cache
 
 from sqlalchemy import (
+    CHAR,
     BigInteger,
     Column,
     DateTime,
@@ -22,7 +22,6 @@ from sqlalchemy import (
     create_engine,
 )
 from sqlalchemy.dialects import mysql
-from sqlalchemy.engine import Connection
 
 from app.config import get_settings
 
@@ -62,6 +61,9 @@ report_tb = Table(
     Column("report_id", exact_string(64), primary_key=True),
     # microseconds, so the snapshots of one device sort even when two arrive in the same second
     Column("reported_at", DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql"), nullable=False),
+    # SHA-256 of the play counts as parsed: a retry carries the same counts, another report sent
+    # under the same id does not
+    Column("counts_sha256", CHAR(64), nullable=False),
     mysql_charset="utf8mb4",
 )
 
@@ -81,13 +83,20 @@ playcount_tb = Table(
 )
 
 
+# FastAPI runs each request in one of this many worker threads (app.main sets the limit), and a request
+# holds at most one connection, in the thread that runs it. The pool may open one connection per thread,
+# so a request never waits for a connection.
+REQUEST_THREADS = 40
+
+
+def create_db_engine(url: str) -> Engine:
+    # pool_pre_ping replaces connections MySQL has closed while idle; ten connections are kept open and
+    # the rest are opened under load and closed again once ten are idle
+    return create_engine(
+        url, pool_pre_ping=True, pool_recycle=1800, pool_size=10, max_overflow=REQUEST_THREADS - 10
+    )
+
+
 @lru_cache
 def get_engine() -> Engine:
-    # pool_pre_ping replaces connections RDS has closed while idle
-    return create_engine(get_settings().database_url, pool_pre_ping=True, pool_recycle=1800)
-
-
-def get_connection() -> Iterator[Connection]:
-    """FastAPI dependency: one pooled connection per request; the endpoint opens the transaction."""
-    with get_engine().connect() as conn:
-        yield conn
+    return create_db_engine(get_settings().database_url)

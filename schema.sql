@@ -17,11 +17,13 @@ CREATE TABLE IF NOT EXISTS music_tb (
     INDEX ix_music_tb_name (name)
 ) DEFAULT CHARSET=utf8mb4;
 
--- one row per report; a retry with the same (device_id, report_id) is not stored again
+-- one row per report; a retry with the same (device_id, report_id) is not stored again, and the same
+-- id sent with other play counts is refused
 CREATE TABLE IF NOT EXISTS report_tb (
-    device_id   VARCHAR(64) COLLATE utf8mb4_0900_bin NOT NULL,
-    report_id   VARCHAR(64) COLLATE utf8mb4_0900_bin NOT NULL COMMENT 'sent by the client, or a UUID when it sends none',
-    reported_at DATETIME(6) NOT NULL COMMENT 'when the server received the report, UTC',
+    device_id     VARCHAR(64) COLLATE utf8mb4_0900_bin NOT NULL,
+    report_id     VARCHAR(64) COLLATE utf8mb4_0900_bin NOT NULL COMMENT 'sent by the client, or a UUID when it sends none',
+    reported_at   DATETIME(6) NOT NULL COMMENT 'when the server received the report, UTC',
+    counts_sha256 CHAR(64)    NOT NULL COMMENT 'SHA-256 of the parsed play counts, to tell a retry from a reused id',
     PRIMARY KEY (device_id, report_id),
     FOREIGN KEY (device_id) REFERENCES user_tb (device_id)
 ) DEFAULT CHARSET=utf8mb4;

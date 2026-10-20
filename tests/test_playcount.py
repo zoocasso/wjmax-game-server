@@ -1,16 +1,21 @@
+import json
 import os
 import threading
+import time
+from collections import Counter
 from pathlib import Path
 
 os.environ.setdefault("DATABASE_URL", "sqlite://")
 
 import anyio  # noqa: E402
 import pytest  # noqa: E402
+from anyio import to_thread  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine, insert, inspect, make_url, select, text  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app import db_session  # noqa: E402
+from app.db_session import REQUEST_THREADS  # noqa: E402
 from app.main import MAX_BODY_BYTES, app  # noqa: E402
 from app.playcount import (  # noqa: E402
     CHARTS_PER_SONG,
@@ -68,6 +73,18 @@ def test_the_largest_count_mysql_int_holds_is_accepted():
 def test_a_title_is_stripped():
     log = repr({"playDatas": [entry("  Song A ", [0] * 8)]})
     assert parse_count_log(log)[0].title == "Song A"
+
+
+@pytest.mark.parametrize(
+    "log",
+    [
+        '{"playDatas": ["Song \\ud800*' + "*".join(["1"] * 8) + '"]}',  # JSON escape
+        "{'playDatas': ['Song \\udfff*" + "*".join(["1"] * 8) + "']}",  # Python escape
+    ],
+)
+def test_a_title_with_half_a_surrogate_pair_is_rejected(log):
+    with pytest.raises(CountLogError, match="not valid Unicode"):
+        parse_count_log(log)
 
 
 @pytest.mark.parametrize(
@@ -152,7 +169,7 @@ def make_engine(url=TEST_DATABASE_URL):
     database = make_url(url).database or ""
     if not database.endswith("test"):
         raise RuntimeError(f"TEST_DATABASE_URL must name a database ending in 'test', not {database!r}")
-    engine = create_engine(url)
+    engine = db_session.create_db_engine(url)  # the pool the app runs with
     lines = SCHEMA_SQL.read_text().splitlines()
     ddl = "\n".join(line for line in lines if not line.lstrip().startswith("--"))
     with engine.begin() as conn:
@@ -235,6 +252,31 @@ def test_a_retried_report_is_stored_once(client):
     assert len(rows(client, db_session.playcount_tb)) == 8
 
 
+def test_a_reused_report_id_with_other_counts_is_refused(client):
+    post(client, "dev-1", [("Song A", [1] * 8)], report_id="r-1")
+    reused = post(client, "dev-1", [("Song A", [2] * 8)], report_id="r-1")
+    assert reused.status_code == 409
+    assert {row.count for row in rows(client, db_session.playcount_tb)} == {1}
+
+
+def test_a_retry_in_another_quoting_style_is_still_a_retry(client):
+    counts = [("Song A", [1] * 8)]
+    post(client, "dev-1", counts, report_id="r-1")
+    log = '{"playDatas": ["' + entry("Song A", [1] * 8) + '"], "version": 2}'  # JSON, with an extra field
+    body = {"device_id": "dev-1", "count_log": log, "report_id": "r-1"}
+    retry = client.post("/insert_playcount", json=body)
+    assert retry.status_code == 200 and retry.json()["duplicate"] is True
+
+
+def test_a_title_sent_twice_in_one_report_is_stored_twice(client):
+    # deliberate: entries are stored as the client sent them, and the released client sends both
+    # "Oort Cloud" and its alias "오르트 구름"; readers of one report see both rows for those charts
+    r = post(client, "dev-1", [("Song A", [1] * 8), ("Song A", [2] * 8)])
+    assert r.json()["saved"] == 16
+    stored = sorted((row.music_key, row.count) for row in rows(client, db_session.playcount_tb))
+    assert stored == sorted((1 + j, c) for j in range(8) for c in (1, 2))
+
+
 def test_a_report_id_belongs_to_one_device(client):
     post(client, "dev-1", [("Song A", [1] * 8)], report_id="r-1")
     other = post(client, "dev-2", [("Song A", [1] * 8)], report_id="r-1")
@@ -283,6 +325,74 @@ def test_a_count_too_big_for_mysql_is_a_422(client):
 def test_device_id_is_required(client):
     r = client.post("/insert_playcount", json={"device_id": "", "count_log": "{}"})
     assert r.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "device_id",
+    ["dev 1", "dev-1 ", "dev\n2026-10-20 INFO forged line", "dev\x00", "dev\t1", "dev\u2028", "dev\u200b"],
+)
+def test_a_device_id_with_spaces_or_control_characters_is_rejected(client, device_id):
+    assert post(client, device_id, [("Song A", [1] * 8)]).status_code == 422
+    assert rows(client, db_session.user_tb) == []
+
+
+@pytest.mark.parametrize(
+    "device_id",
+    ["3f2a9c0e1b7d4e8fa6b5c4d3e2f1a0b9c8d7e6f5", "550e8400-e29b-41d4-a716-446655440000", "기기-1"],
+)
+def test_ordinary_device_ids_are_accepted(client, device_id):
+    assert post(client, device_id, [("Song A", [1] * 8)]).status_code == 200
+
+
+LOG_A = repr({"playDatas": [entry("Song A", [1] * 8)]})
+LONE_SURROGATE_BODIES = {
+    "in device_id": {"device_id": "dev\ud800", "count_log": LOG_A},
+    "in count_log": {"device_id": "dev-1", "count_log": "{'playDatas': ['\ud800']}"},
+    # the log is valid text, but the title in it decodes to a lone surrogate
+    "escaped inside count_log": {
+        "device_id": "dev-1",
+        "count_log": "{'playDatas': ['" + entry("A\\ud800", [1] * 8) + "']}",
+    },
+}
+
+
+@pytest.mark.parametrize("body", LONE_SURROGATE_BODIES.values(), ids=LONE_SURROGATE_BODIES.keys())
+def test_a_lone_surrogate_is_a_422(client, body):
+    # json.dumps writes a lone surrogate as the escape \ud800; httpx's json= cannot encode one at all
+    raw = json.dumps(body).encode()
+    r = client.post("/insert_playcount", content=raw, headers={"Content-Type": "application/json"})
+    assert r.status_code == 422
+    assert rows(client, db_session.user_tb) == []
+
+
+def test_a_422_does_not_echo_the_input(client):
+    r = client.post("/insert_playcount", json={"device_id": "", "count_log": "x" * 100_000})
+    assert r.status_code == 422
+    assert [set(error) for error in r.json()["detail"]] == [{"loc", "msg", "type"}]
+    assert len(r.content) < 1000
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"device_id": "dev-1", "count_log": "garbage"},
+        {"device_id": "", "count_log": LOG_A},
+        {"device_id": "dev-1", "count_log": LOG_A, "report_id": "not valid"},
+    ],
+)
+def test_malformed_input_is_a_422_even_when_the_database_is_down(client, monkeypatch, body):
+    down = create_engine("sqlite:////nonexistent-dir/wjmax.db")
+    monkeypatch.setattr("app.main.get_engine", lambda: down)
+    assert client.post("/insert_playcount", json=body).status_code == 422
+    failing = TestClient(app, raise_server_exceptions=False)
+    assert post(failing, "dev-1", [("Song A", [1] * 8)]).status_code == 500  # the database really is down
+
+
+def test_requests_run_in_as_many_threads_as_the_pool_has_connections(client):
+    threads = client.portal.call(lambda: to_thread.current_default_thread_limiter().total_tokens)
+    assert threads == REQUEST_THREADS
+    engine = db_session.create_db_engine("mysql+pymysql://user:pw@127.0.0.1:3306/wjmax_test")
+    assert engine.pool.size() + engine.pool._max_overflow == REQUEST_THREADS
 
 
 def test_an_oversized_body_is_refused_from_its_content_length(client):
@@ -380,11 +490,8 @@ def test_titles_that_differ_only_in_case_accent_or_kana_are_different_songs(clie
     assert stored == expected
 
 
-@pytest.mark.parametrize(
-    "device_id, report_id",
-    [("DEV-1", "r-1"), ("dev-1", "R-1"), ("dev-1 ", "r-1")],
-)
-def test_ids_that_differ_only_in_case_or_a_trailing_space_are_not_retries(client, device_id, report_id):
+@pytest.mark.parametrize("device_id, report_id", [("DEV-1", "r-1"), ("dev-1", "R-1")])
+def test_ids_that_differ_only_in_case_are_not_retries(client, device_id, report_id):
     post(client, "dev-1", [("Song A", [1] * 8)], report_id="r-1")
     other = post(client, device_id, [("Song A", [1] * 8)], report_id=report_id)
     assert other.json()["duplicate"] is False
@@ -438,3 +545,30 @@ def test_concurrent_deliveries_of_one_report_store_it_once(client):
     assert second["result"].duplicate is True
     assert second["result"].saved == 8
     assert len([r for r in rows(client, db_session.playcount_tb) if r.report_id == "r-1"]) == 8
+
+
+@needs_mysql
+def test_more_clients_than_threads_and_connections_are_all_answered(client):
+    # 60 clients at once, more than the 40 worker threads. With the connection taken by a FastAPI
+    # dependency, every thread ended up waiting for one and 281 of 600 requests timed out with a 500.
+    clients, reports_each = 60, 5
+    statuses = []
+
+    def send_reports(i):
+        for j in range(reports_each):
+            try:
+                status = post(client, f"dev-{i}", [("Song A", [j] * 8)], report_id=f"r-{j}").status_code
+            except Exception as e:  # a pool timeout surfaces here as the server's exception
+                status = type(e).__name__
+            statuses.append(status)
+
+    threads = [threading.Thread(target=send_reports, args=(i,)) for i in range(clients)]
+    started = time.monotonic()
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    elapsed = time.monotonic() - started
+    assert Counter(statuses) == {200: clients * reports_each}
+    assert len(rows(client, db_session.report_tb)) == clients * reports_each
+    assert elapsed < 25, f"{elapsed:.0f} s: requests waited for connections"
