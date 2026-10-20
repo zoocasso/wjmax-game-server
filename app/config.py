@@ -8,7 +8,7 @@ from functools import lru_cache
 @dataclass(frozen=True)
 class Settings:
     database_url: str
-    # the API docs are off by default: the server faces the public internet behind Cloudflare
+    # the API docs are off by default: a deployed server is public (WJMAX's sat behind Cloudflare)
     docs: bool
 
 
