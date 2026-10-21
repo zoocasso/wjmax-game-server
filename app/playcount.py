@@ -137,7 +137,19 @@ def parse_count_log(count_log: str) -> list[SongCounts]:
         if max(counts) > MAX_COUNT:
             raise CountLogError(f"playDatas[{i}] has a count above {MAX_COUNT}")
         songs.append(SongCounts(TITLE_ALIASES.get(title, title), counts))
-    return songs
+    return combine_entries(songs)
+
+
+def combine_entries(songs: list[SongCounts]) -> list[SongCounts]:
+    """Adds up the entries that name the same song (a title twice, or a title and its alias), so a
+    report stores one row per chart."""
+    totals: dict[str, tuple[int, ...]] = {}
+    for song in songs:
+        previous = totals.get(song.title, (0,) * CHARTS_PER_SONG)
+        totals[song.title] = tuple(a + b for a, b in zip(previous, song.counts, strict=True))
+    if any(max(counts) > MAX_COUNT for counts in totals.values()):
+        raise CountLogError(f"the counts of one song add up to more than {MAX_COUNT}")
+    return [SongCounts(title, counts) for title, counts in totals.items()]
 
 
 def counts_digest(songs: list[SongCounts]) -> str:
