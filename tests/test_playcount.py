@@ -514,13 +514,40 @@ def test_text_keys_compare_exactly_in_schema_sql(client):
     assert found == dict.fromkeys(expected, "utf8mb4_0900_bin")
 
 
+def mysql_type(type_, dialect):
+    # a reflected VARCHAR with its own collation also names its character set; every table is utf8mb4
+    return type_.compile(dialect).replace(" CHARACTER SET utf8mb4", "")
+
+
 @needs_mysql
 def test_schema_sql_declares_the_tables_the_code_uses(client):
-    found = inspect(client.engine)
+    # MySQL runs schema.sql; the code (and SQLite in these tests) uses the tables in db_session.py
+    found, dialect = inspect(client.engine), client.engine.dialect
     for table in db_session.metadata.sorted_tables:
-        assert [c["name"] for c in found.get_columns(table.name)] == list(table.c.keys())
+        columns = {c["name"]: c for c in found.get_columns(table.name)}
+        assert list(columns) == list(table.c.keys()), table.name
+        for column in table.c:
+            reflected, where = columns[column.name], f"{table.name}.{column.name}"
+            assert mysql_type(reflected["type"], dialect) == mysql_type(column.type, dialect), where
+            assert reflected["nullable"] == column.nullable, where
+            assert (reflected.get("autoincrement") is True) == (column is table.autoincrement_column), where
+
         primary_key = found.get_pk_constraint(table.name)["constrained_columns"]
-        assert primary_key == list(table.primary_key.columns.keys())
+        assert primary_key == list(table.primary_key.columns.keys()), table.name
+        foreign_keys = {
+            (tuple(fk["constrained_columns"]), fk["referred_table"], tuple(fk["referred_columns"]))
+            for fk in found.get_foreign_keys(table.name)
+        }
+        assert foreign_keys == {
+            (tuple(fk.column_keys), fk.referred_table.name, tuple(e.column.name for e in fk.elements))
+            for fk in table.foreign_key_constraints
+        }, table.name
+        indexes = {
+            (i["name"], tuple(i["column_names"]), bool(i["unique"])) for i in found.get_indexes(table.name)
+        }
+        assert indexes == {(i.name, tuple(c.name for c in i.columns), bool(i.unique)) for i in table.indexes}
+        charset = found.get_table_options(table.name)["mysql_default charset"]
+        assert charset == table.kwargs["mysql_charset"], table.name
 
 
 @needs_mysql

@@ -47,7 +47,8 @@ user_tb = Table(
 music_tb = Table(
     "music_tb",
     metadata,
-    Column("music_key", Integer, primary_key=True),
+    # the keys come from the game's song list, so they are not generated (schema.sql has no AUTO_INCREMENT)
+    Column("music_key", Integer, primary_key=True, autoincrement=False),
     Column("name", exact_string(100), nullable=False, index=True),
     mysql_charset="utf8mb4",
 )

@@ -26,7 +26,7 @@ This repository holds the service's API, cleaned up and rewritten in October 202
 - **No authentication.** The released game client sends no credentials, so anyone who knows the URL can post a report under any `device_id`. Input validation, the body limit and Cloudflare in front of the server are what bound abuse; reports are not proof of who played.
 - **Starts without the database.** Tables are declared in code ([`schema.sql`](schema.sql) has the DDL), the engine is created on first use, and stale connections are checked before use. `GET /healthz` reports database trouble as `503`.
 - **No secrets in the image.** Settings come from the environment at run time, the container runs as a non-root user, and the API docs are off unless `ENABLE_DOCS=1`.
-- **Tested.** [`tests/`](tests/) covers parsing and the API. GitHub Actions runs them on SQLite and again on MySQL 8.0 and 8.4 with the tables from `schema.sql`, which also checks that `schema.sql` matches the code, that titles and ids compare exactly, that concurrent retries are stored once and that 60 clients sending at once are all answered. The MySQL jobs fail if any test is skipped.
+- **Tested.** [`tests/`](tests/) covers parsing and the API. GitHub Actions runs them on SQLite and again on MySQL 8.0 and 8.4 with the tables from `schema.sql`, which also checks that `schema.sql` matches the code (column types and collations, nullability, keys, indexes), that titles and ids compare exactly, that concurrent retries are stored once and that 60 clients sending at once are all answered. The MySQL jobs fail if any test is skipped.
 
 ### API
 
@@ -90,7 +90,7 @@ Tests: `pip install -r requirements-dev.txt` and `python -m pytest -q`. Set `TES
 - **인증 없음**: 배포된 게임 클라이언트가 인증 정보를 보내지 않으므로, URL을 알면 누구나 아무 `device_id`로 보고를 보낼 수 있습니다. 입력 검증, 본문 크기 제한, 앞단의 Cloudflare가 남용을 막는 장치이고, 보고가 실제 플레이를 증명하지는 않습니다.
 - **DB 없이도 시작**: 테이블은 코드와 [`schema.sql`](schema.sql)에 선언하고, 엔진은 처음 쓸 때 만들며, 오래된 연결은 쓰기 전에 확인합니다. `GET /healthz`는 DB 문제를 `503`으로 알립니다.
 - **이미지에 비밀값 없음**: 설정은 실행할 때 환경 변수로 받고, 컨테이너는 root가 아닌 사용자로 돌며, API 문서는 `ENABLE_DOCS=1`일 때만 엽니다.
-- **테스트**: [`tests/`](tests/)의 파싱·API 테스트를 GitHub Actions가 push마다 SQLite와, `schema.sql`로 만든 MySQL 8.0·8.4에서 각각 돌립니다. MySQL 쪽은 `schema.sql`이 코드와 맞는지, 제목과 id를 정확히 비교하는지, 동시에 온 재전송이 한 번만 저장되는지, 클라이언트 60개가 동시에 보내도 모두 응답받는지도 확인하고, 건너뛴 테스트가 하나라도 있으면 실패합니다.
+- **테스트**: [`tests/`](tests/)의 파싱·API 테스트를 GitHub Actions가 push마다 SQLite와, `schema.sql`로 만든 MySQL 8.0·8.4에서 각각 돌립니다. MySQL 쪽은 `schema.sql`이 코드와 맞는지(컬럼 타입·콜레이션, NULL 허용, 키, 인덱스), 제목과 id를 정확히 비교하는지, 동시에 온 재전송이 한 번만 저장되는지, 클라이언트 60개가 동시에 보내도 모두 응답받는지도 확인하고, 건너뛴 테스트가 하나라도 있으면 실패합니다.
 
 오류 응답: 잘못된 입력은 `422`, 다른 플레이 횟수와 함께 재사용한 `report_id`는 `409`, 1MB가 넘는 본문은 `413`입니다.
 
