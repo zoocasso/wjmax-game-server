@@ -23,6 +23,8 @@ log = logging.getLogger("wjmax")
 
 # a full report (1,000 songs) is far smaller; anything bigger is refused before it is read
 MAX_BODY_BYTES = 1_000_000
+# a report may name up to 1,000 unknown titles of any length; the log gets a few, cut short
+LOGGED_TITLES, LOGGED_TITLE_CHARS = 5, 40
 
 
 class PlayCountForm(BaseModel):
@@ -121,7 +123,9 @@ def create_app() -> FastAPI:
         except ReportConflict as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
         if result.unknown_titles and not result.duplicate:
-            log.warning("unknown titles from %s: %s", form.device_id, result.unknown_titles)
+            shown = [title[:LOGGED_TITLE_CHARS] for title in result.unknown_titles[:LOGGED_TITLES]]
+            # %r escapes line breaks, so a title cannot forge log lines
+            log.warning("%d unknown titles from %s: %r", len(result.unknown_titles), form.device_id, shown)
         return PlayCountResult(
             saved=result.saved,
             unknown_titles=result.unknown_titles,

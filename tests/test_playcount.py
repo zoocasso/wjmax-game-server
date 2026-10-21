@@ -65,6 +65,28 @@ def test_known_alias_is_mapped():
     assert parse_count_log(log)[0].title == "Oort Cloud"
 
 
+def test_entries_for_the_same_song_are_added_up():
+    log = repr(
+        {
+            "playDatas": [
+                entry("Oort Cloud", [1] * 8),
+                entry("Song A", [5] * 8),
+                entry("오르트 구름", range(8)),
+            ]
+        }
+    )
+    assert parse_count_log(log) == [
+        SongCounts("Oort Cloud", tuple(1 + j for j in range(8))),
+        SongCounts("Song A", (5,) * 8),
+    ]
+
+
+def test_counts_that_add_up_past_mysql_int_are_rejected():
+    log = repr({"playDatas": [entry("Song A", [MAX_COUNT] * 8), entry("Song A", [1] * 8)]})
+    with pytest.raises(CountLogError, match="add up"):
+        parse_count_log(log)
+
+
 def test_the_largest_count_mysql_int_holds_is_accepted():
     log = repr({"playDatas": [entry("Song A", [MAX_COUNT] * 8)]})
     assert parse_count_log(log)[0].counts == (MAX_COUNT,) * 8
@@ -268,13 +290,23 @@ def test_a_retry_in_another_quoting_style_is_still_a_retry(client):
     assert retry.status_code == 200 and retry.json()["duplicate"] is True
 
 
-def test_a_title_sent_twice_in_one_report_is_stored_twice(client):
-    # deliberate: entries are stored as the client sent them, and the released client sends both
-    # "Oort Cloud" and its alias "오르트 구름"; readers of one report see both rows for those charts
-    r = post(client, "dev-1", [("Song A", [1] * 8), ("Song A", [2] * 8)])
-    assert r.json()["saved"] == 16
+def test_a_song_named_twice_is_stored_once_with_its_counts_added(client):
+    r = post(
+        client, "dev-1", [("Song A", [1] * 8), ("Song A", [2] * 8), ("Nope", [1] * 8), ("Nope", [1] * 8)]
+    )
+    assert (r.json()["saved"], r.json()["unknown_titles"]) == (8, ["Nope"])
     stored = sorted((row.music_key, row.count) for row in rows(client, db_session.playcount_tb))
-    assert stored == sorted((1 + j, c) for j in range(8) for c in (1, 2))
+    assert stored == [(1 + j, 3) for j in range(8)]
+
+
+def test_unknown_titles_are_logged_as_a_count_and_a_short_escaped_sample(client, caplog):
+    titles = [f"Unknown {i}\nFORGED " + "x" * 100 for i in range(20)]
+    post(client, "dev-1", [(t, [1] * 8) for t in titles])
+    [record] = [r for r in caplog.records if r.name == "wjmax"]
+    message = record.getMessage()
+    assert message.startswith("20 unknown titles from dev-1: ")
+    assert "\n" not in message and "Unknown 4" in message and "Unknown 5" not in message
+    assert len(message) < 400
 
 
 def test_a_report_id_belongs_to_one_device(client):
