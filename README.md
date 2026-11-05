@@ -10,7 +10,7 @@ The play-log ingestion API of **WJMAX**, a fan-made rhythm game in the Woowakgoo
 
 While the game was live, the service ran as: **game client → Cloudflare (proxy, WAF) → AWS EC2 (FastAPI in Docker) → AWS RDS (MySQL)**.
 
-This repository holds the service's API, cleaned up and rewritten in October 2026. The request the game client sends is unchanged.
+This repository holds the service's API, cleaned up and rewritten in October 2026. The request the game client sends is unchanged. The 2026 rewrite was made with an AI coding assistant (Claude Code). The live service in 2023–2024, from design to deployment and operation, was my own work.
 
 ### Design
 
@@ -76,7 +76,7 @@ Tests: `pip install -r requirements-dev.txt` and `python -m pytest -q`. Set `TES
 
 서비스 당시 운영 구성: **게임 클라이언트 → Cloudflare(프록시, WAF) → AWS EC2(Docker의 FastAPI) → AWS RDS(MySQL)**.
 
-이 저장소는 서비스 API를 2026년 10월에 정리해 다시 쓴 것입니다. 게임 클라이언트가 보내는 요청은 그대로입니다.
+이 저장소는 서비스 API를 2026년 10월에 정리해 다시 쓴 것입니다. 게임 클라이언트가 보내는 요청은 그대로입니다. 2026년 재작성은 AI 코딩 도구(Claude Code)와 함께 했습니다. 2023~2024년 실제 서비스의 설계·배포·운영은 제가 직접 했습니다.
 
 - **요청 하나에 트랜잭션 하나**: 보고 하나는 전부 저장되거나 전혀 저장되지 않습니다. 입력은 DB 연결을 잡기 전에 검사하므로, DB가 내려가 있어도 잘못된 입력은 `422`가 됩니다.
 - **기기는 한 번만 등록**: 첫 보고에서 기기를 만들고(`INSERT IGNORE`), 이후 보고는 처음 본 시각을 유지합니다.
