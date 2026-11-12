@@ -2,11 +2,38 @@
 
 [![tests](https://github.com/zoocasso/wjmax-game-server/actions/workflows/ci.yml/badge.svg)](https://github.com/zoocasso/wjmax-game-server/actions/workflows/ci.yml)
 
+Play-log ingestion API of a fan-made community rhythm game, about 2,000 concurrent players at peak. Cleaned up and rewritten in 2026.<br>
+커뮤니티 리듬게임(팬게임)의 플레이 로그 수집 API입니다. 동시 접속은 최대 약 2,000명이었고, 2026년에 정리해 다시 썼습니다.
+
+```mermaid
+flowchart LR
+    client["Game client<br/>~300 players on average, ~2,000 at peak"]:::other
+    cf["Cloudflare<br/>proxy · WAF"]:::mine
+    api["FastAPI in Docker<br/>AWS EC2"]:::mine
+    db[("MySQL<br/>AWS RDS")]:::mine
+    client -.->|"play report"| cf
+    cf -->|"proxied request"| api
+    api -->|"one transaction per report"| db
+    classDef mine fill:#EEF2FF,stroke:#2450F0,stroke-width:2px,color:#0B0D12
+    classDef other fill:#F1F2F5,stroke:#7A8394,stroke-width:1.5px,stroke-dasharray:5 4,color:#3F4654
+```
+
+<sub>The service as it ran while the game was live (2023–2024). Solid blue: my work · grey dashed: built by someone else.<br>
+게임 서비스 당시(2023~2024) 구성. 파란 실선: 제 작업 · 회색 점선: 다른 사람의 작업.</sub>
+
 [English](#english) · [한국어](#한국어)
 
 ## English
 
-The play-log ingestion API of **WJMAX**, a fan-made rhythm game in the Woowakgood community. Side project, Aug 2023 – Feb 2024, two people: the main developer built the game and I was the sole server developer (server, security layer, database). About 300 players were online on average and about 2,000 at the peak of an update day.
+| At a glance | |
+| :--- | :--- |
+| **What** | The play-log ingestion API of **WJMAX**, a fan-made rhythm game in the Woowakgood community. Side project of two people |
+| **My part** | Sole server developer: server, security layer and database. Design, deployment and operation of the live service |
+| **Others** | The main developer built the game and its client |
+| **Numbers** | Aug 2023 – Feb 2024 · about 300 players online on average, about 2,000 at the peak of an update day |
+| **Stack** | Python, FastAPI, SQLAlchemy, MySQL, Docker, AWS EC2 and RDS, Cloudflare |
+| **Run · tests** | [Run](#run) · pytest on SQLite, and on MySQL 8.0 and 8.4 in GitHub Actions |
+| **Write-up** | [zoocasso.github.io/en/work/wjmax](https://zoocasso.github.io/en/work/wjmax/) |
 
 While the game was live, the service ran as: **game client → Cloudflare (proxy, WAF) → AWS EC2 (FastAPI in Docker) → AWS RDS (MySQL)**.
 
@@ -72,7 +99,15 @@ Tests: `pip install -r requirements-dev.txt` and `python -m pytest -q`. Set `TES
 
 ## 한국어
 
-우왁굳 팬게임 **왁제이맥스(WJMAX)**의 플레이 로그 수집 API입니다. 사이드 프로젝트(2023.08 ~ 2024.02, 2인 팀)로, 게임은 메인 개발자가 만들고 저는 서버를 단독으로 맡아 서버·보안 계층·데이터베이스를 담당했습니다. 동시 접속은 평균 약 300명, 업데이트 날 최대 약 2,000명이었습니다.
+| 한눈에 보기 | |
+| :--- | :--- |
+| **무엇** | 우왁굳 팬게임 **왁제이맥스(WJMAX)**의 플레이 로그 수집 API. 2인 팀 사이드 프로젝트 |
+| **제가 한 일** | 서버 단독 담당: 서버·보안 계층·데이터베이스. 실제 서비스의 설계·배포·운영 |
+| **다른 사람** | 게임과 클라이언트는 메인 개발자가 개발 |
+| **수치** | 2023.08 ~ 2024.02 · 동시 접속 평균 약 300명, 업데이트 날 최대 약 2,000명 |
+| **기술** | Python, FastAPI, SQLAlchemy, MySQL, Docker, AWS EC2·RDS, Cloudflare |
+| **실행·테스트** | [Run](#run) · SQLite에서, 그리고 GitHub Actions의 MySQL 8.0·8.4에서 pytest |
+| **상세** | [zoocasso.github.io/work/wjmax](https://zoocasso.github.io/work/wjmax/) |
 
 서비스 당시 운영 구성: **게임 클라이언트 → Cloudflare(프록시, WAF) → AWS EC2(Docker의 FastAPI) → AWS RDS(MySQL)**.
 
