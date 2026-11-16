@@ -1,0 +1,10 @@
+flowchart LR
+    client["Game client<br/>~300 players on average, ~2,000 at peak"]:::other
+    cf["Cloudflare<br/>proxy · WAF"]:::mine
+    api["FastAPI in Docker<br/>AWS EC2"]:::mine
+    db[("MySQL<br/>AWS RDS")]:::mine
+    client -.->|"play report"| cf
+    cf -->|"proxied request"| api
+    api -->|"one transaction per report"| db
+    classDef mine fill:#EEF2FF,stroke:#2450F0,stroke-width:2px,color:#0B0D12
+    classDef other fill:#F1F2F5,stroke:#7A8394,stroke-width:1.5px,stroke-dasharray:5 4,color:#3F4654

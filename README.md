@@ -6,24 +6,11 @@ Play-log ingestion API of **WJMAX**, a fan-made community rhythm game: about 300
 
 **Write-up:** [English](https://zoocasso.github.io/en/work/wjmax/) · [한국어](https://zoocasso.github.io/work/wjmax/)
 
-```mermaid
-flowchart LR
-    client["Game client<br/>~300 players on average, ~2,000 at peak"]:::other
-    cf["Cloudflare<br/>proxy · WAF"]:::mine
-    api["FastAPI in Docker<br/>AWS EC2"]:::mine
-    db[("MySQL<br/>AWS RDS")]:::mine
-    client -.->|"play report"| cf
-    cf -->|"proxied request"| api
-    api -->|"one transaction per report"| db
-    classDef mine fill:#EEF2FF,stroke:#2450F0,stroke-width:2px,color:#0B0D12
-    classDef other fill:#F1F2F5,stroke:#7A8394,stroke-width:1.5px,stroke-dasharray:5 4,color:#3F4654
-```
+<img src="docs/diagram.png" alt="Service as it ran: game client, Cloudflare proxy and WAF, FastAPI in Docker on AWS EC2, MySQL on AWS RDS" width="860">
 
 <sub>The service as it ran while the game was live (2023–2024). Solid blue: my work · grey dashed: built by someone else.</sub>
 
-## At a glance
-
-| | |
+| At&nbsp;a&nbsp;glance | |
 | :--- | :--- |
 | **What** | The play-log ingestion API of **WJMAX**, a fan-made rhythm game in the Woowakgood community. Side project of two people |
 | **My part** | Sole server developer: server, security layer and database. Design, deployment and operation of the live service |
