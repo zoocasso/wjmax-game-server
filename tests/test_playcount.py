@@ -56,8 +56,8 @@ def test_extra_fields_with_plain_values_are_allowed():
 
 
 def test_a_title_may_contain_an_apostrophe_or_a_star():
-    log = repr({"playDatas": [entry("Don't*Stop", [2] * 8)]})
-    assert parse_count_log(log)[0].title == "Don't*Stop"
+    log = repr({"playDatas": [entry("Song's*Title", [2] * 8)]})
+    assert parse_count_log(log)[0].title == "Song's*Title"
 
 
 ALIASES = {"Song A (alt)": "Song A"}
@@ -507,7 +507,7 @@ def test_the_tests_refuse_a_database_not_named_for_tests(database):
 
 
 # titles that MySQL's default collation (utf8mb4_0900_ai_ci) would fold together
-LOOKALIKE_TITLES = ["Glory", "GLORY", "Cafe", "Café", "ゆめ", "ユメ"]
+LOOKALIKE_TITLES = ["Song", "SONG", "Cafe", "Café", "うた", "ウタ"]
 
 
 def test_titles_that_differ_only_in_case_accent_or_kana_are_different_songs(client):

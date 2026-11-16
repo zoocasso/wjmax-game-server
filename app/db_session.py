@@ -30,7 +30,7 @@ metadata = MetaData()
 
 def exact_string(length: int) -> String:
     """A string compared byte for byte: on MySQL utf8mb4_0900_bin instead of the default
-    utf8mb4_0900_ai_ci, which treats "GLORY" as "Glory", "Café" as "Cafe" and "ユメ" as "ゆめ".
+    utf8mb4_0900_ai_ci, which treats "SONG" as "Song", "Café" as "Cafe" and "ウタ" as "うた".
     SQLite already compares exactly and has no such collation."""
     return String(length).with_variant(String(length, collation="utf8mb4_0900_bin"), "mysql")
 

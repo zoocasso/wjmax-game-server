@@ -45,14 +45,14 @@ flowchart LR
 - **A report is stored completely or not at all.** One transaction per report, with the input checked before a connection is taken, so malformed input is a `422` even when the database is down.
 - **A retried report is stored once.** A client may send a `report_id`; a second delivery with the same id writes nothing and answers `"duplicate": true`, even when both arrive at once. The same id with different play counts is refused with `409`.
 - **Hostile input is a `422`, not a crash.** `count_log` is tokenized before it is parsed (limited types, at most four levels deep), counts must fit a MySQL `INT`, and bodies over 1 MB are refused with `413`.
-- **Exact matching.** Titles and ids compare byte for byte (`utf8mb4_0900_bin`), because MySQL's default collation would merge songs such as "Glory" and "GLORY" or "ゆめ" and "ユメ".
+- **Exact matching.** Titles and ids compare byte for byte (`utf8mb4_0900_bin`), because MySQL's default collation would merge songs such as "Song" and "SONG" or "うた" and "ウタ".
 
 ## API
 
 `POST /insert_playcount`, as the game client sends it:
 
 ```json
-{"device_id": "…", "count_log": "{'playDatas': ['Oort Cloud*3*1*0*0*2*0*0*0']}"}
+{"device_id": "…", "count_log": "{'playDatas': ['Sample Song*3*1*0*0*2*0*0*0']}"}
 ```
 
 Each entry is a song title and the play count of each of its eight charts. An optional `"report_id"` (1–64 letters, digits, `-` or `_`) makes retries safe. The response:
@@ -100,7 +100,7 @@ Tests: `pip install -r requirements-dev.txt` and `python -m pytest -q`. Set `TES
 - **A retried report is stored once.** A client may send its own `report_id`; a second delivery with the same id is answered with `"duplicate": true` and writes nothing, even when both arrive at once (the key makes the second `INSERT IGNORE` wait for the first). The game client as it was released sends no id, so the server assigns one and its retries are stored as separate reports. A `report_id` the device already used, sent with different play counts, is refused with `409`: `report_tb` keeps a SHA-256 of each report's parsed play counts, so a retry still matches when it is quoted differently.
 - **One row per chart.** Entries that name the same song in one report, a title twice or a title and its alias (aliases come from the `TITLE_ALIASES` setting; [`client.py`](client.py) sends one title twice), are added up, so each chart gets one row per report. A sum that no longer fits a MySQL `INT` is a `422`.
 - **Validated input.** `count_log` is tokenized before it is parsed and may hold only objects, lists, strings, numbers and keywords, at most four levels deep, so hostile input is a `422` instead of a crash inside the JSON or Python parser. Each entry is a non-blank title and eight counts written in ASCII digits that fit a MySQL `INT`. Bodies over 1 MB are refused with `413`: at once when `Content-Length` says so, and otherwise as soon as a chunked body passes 1 MB. Songs that are not in `music_tb` are skipped and returned in `unknown_titles`. `device_id` may not contain spaces, line breaks or other control characters, because it is written to the log. Unknown titles are logged as a count and the first few, cut short and escaped. Text that is not valid Unicode (a lone surrogate) is a `422`, and a `422` names the field and the problem without echoing the input back.
-- **Exact matching.** Titles and ids compare byte for byte (`utf8mb4_0900_bin`). MySQL's default collation ignores case, accents and kana, which would merge songs such as "Glory" and "GLORY" or "ゆめ" and "ユメ" and treat report `R-1` as a retry of `r-1`.
+- **Exact matching.** Titles and ids compare byte for byte (`utf8mb4_0900_bin`). MySQL's default collation ignores case, accents and kana, which would merge songs such as "Song" and "SONG" or "うた" and "ウタ" and treat report `R-1` as a retry of `r-1`.
 - **No authentication.** The released game client sends no credentials, so anyone who knows the URL can post a report under any `device_id`. Input validation, the body limit and Cloudflare in front of the server are what bound abuse; reports are not proof of who played.
 - **Starts without the database.** Tables are declared in code ([`schema.sql`](schema.sql) has the DDL), the engine is created on first use, and stale connections are checked before use. `GET /healthz` reports database trouble as `503`.
 - **No secrets in the image.** Settings come from the environment at run time, the container runs as a non-root user, and the API docs are off unless `ENABLE_DOCS=1`.

@@ -2,7 +2,7 @@
 -- music_tb holds one row per chart; each song's eight charts have consecutive keys.
 --
 -- Titles and ids compare exactly (utf8mb4_0900_bin). MySQL's default utf8mb4_0900_ai_ci ignores
--- case, accents and kana, so "Glory" and "GLORY", "Cafe" and "Café", or "ゆめ" and "ユメ" would be one
+-- case, accents and kana, so "Song" and "SONG", "Cafe" and "Café", or "うた" and "ウタ" would be one
 -- song, and report "R-1" would count as a retry of "r-1". The _0900_ collation does not pad, so a
 -- trailing space is a difference too.
 

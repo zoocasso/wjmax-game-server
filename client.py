@@ -13,7 +13,7 @@ URL = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000/insert_playco
 # the client sends the log as a string with single quotes; counts are per chart, eight per song.
 # The second entry names the same song again, so the server adds it to the first and the report
 # stores eight rows.
-count_log = str({"playDatas": ["Oort Cloud*3*1*0*0*2*0*0*0", "Oort Cloud*1*0*0*0*0*0*0*0"]})
+count_log = str({"playDatas": ["Sample Song*3*1*0*0*2*0*0*0", "Sample Song*1*0*0*0*0*0*0*0"]})
 body = json.dumps({"device_id": "local-test-device", "count_log": count_log}).encode()
 
 req = urllib.request.Request(URL, data=body, headers={"Content-Type": "application/json"})
