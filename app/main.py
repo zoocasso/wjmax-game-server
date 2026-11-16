@@ -108,7 +108,7 @@ def create_app() -> FastAPI:
     @app.post("/insert_playcount")
     def insert_playcount(form: PlayCountForm) -> PlayCountResult:
         try:
-            songs = parse_count_log(form.count_log)
+            songs = parse_count_log(form.count_log, get_settings().title_aliases)
         except CountLogError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
         report_id = form.report_id or uuid.uuid4().hex

@@ -60,24 +60,32 @@ def test_a_title_may_contain_an_apostrophe_or_a_star():
     assert parse_count_log(log)[0].title == "Don't*Stop"
 
 
+ALIASES = {"Song A (alt)": "Song A"}
+
+
 def test_known_alias_is_mapped():
-    log = repr({"playDatas": [entry("오르트 구름", [0] * 8)]})
-    assert parse_count_log(log)[0].title == "Oort Cloud"
+    log = repr({"playDatas": [entry("Song A (alt)", [0] * 8)]})
+    assert parse_count_log(log, ALIASES)[0].title == "Song A"
+
+
+def test_without_aliases_a_title_is_kept_as_sent():
+    log = repr({"playDatas": [entry("Song A (alt)", [0] * 8)]})
+    assert parse_count_log(log)[0].title == "Song A (alt)"
 
 
 def test_entries_for_the_same_song_are_added_up():
     log = repr(
         {
             "playDatas": [
-                entry("Oort Cloud", [1] * 8),
-                entry("Song A", [5] * 8),
-                entry("오르트 구름", range(8)),
+                entry("Song A", [1] * 8),
+                entry("Song B", [5] * 8),
+                entry("Song A (alt)", range(8)),
             ]
         }
     )
-    assert parse_count_log(log) == [
-        SongCounts("Oort Cloud", tuple(1 + j for j in range(8))),
-        SongCounts("Song A", (5,) * 8),
+    assert parse_count_log(log, ALIASES) == [
+        SongCounts("Song A", tuple(1 + j for j in range(8))),
+        SongCounts("Song B", (5,) * 8),
     ]
 
 

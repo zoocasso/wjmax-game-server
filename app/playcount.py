@@ -11,6 +11,7 @@ import io
 import json
 import re
 import tokenize
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -25,9 +26,6 @@ MAX_SONGS = 1000
 MAX_COUNT = 2**31 - 1
 # a log is an object holding a list of strings (two levels); the rest is slack for extra fields
 MAX_DEPTH = 4
-
-# titles the client spells differently from music_tb
-TITLE_ALIASES = {"오르트 구름": "Oort Cloud"}
 
 # ASCII digits only: int() alone also takes "+2", "1_000", " 3" and non-ASCII digits
 COUNT_PATTERN = re.compile(r"[0-9]{1,10}")
@@ -107,7 +105,9 @@ def _load(count_log: str):
         return ast.literal_eval(count_log)
 
 
-def parse_count_log(count_log: str) -> list[SongCounts]:
+def parse_count_log(count_log: str, aliases: Mapping[str, str] | None = None) -> list[SongCounts]:
+    """Reads the log; ``aliases`` maps a title as the client sends it to its name in music_tb."""
+    aliases = aliases or {}
     check_shape(count_log)
     try:
         data = _load(count_log)
@@ -136,7 +136,7 @@ def parse_count_log(count_log: str) -> list[SongCounts]:
         counts = tuple(int(c) for c in parts[1:])
         if max(counts) > MAX_COUNT:
             raise CountLogError(f"playDatas[{i}] has a count above {MAX_COUNT}")
-        songs.append(SongCounts(TITLE_ALIASES.get(title, title), counts))
+        songs.append(SongCounts(aliases.get(title, title), counts))
     return combine_entries(songs)
 
 
