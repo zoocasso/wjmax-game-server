@@ -2,8 +2,8 @@
 
 [![tests](https://github.com/zoocasso/wjmax-game-server/actions/workflows/ci.yml/badge.svg)](https://github.com/zoocasso/wjmax-game-server/actions/workflows/ci.yml)
 
-Play-log ingestion API of a fan-made community rhythm game, about 2,000 concurrent players at peak. Cleaned up and rewritten in 2026.<br>
-커뮤니티 리듬게임(팬게임)의 플레이 로그 수집 API입니다. 동시 접속은 최대 약 2,000명이었고, 2026년에 정리해 다시 썼습니다.
+Play-log ingestion API of a fan-made community rhythm game (2023–2024), about 2,000 concurrent players at peak.<br>
+2023~2024년 커뮤니티 리듬게임(팬게임)의 플레이 로그 수집 API입니다. 동시 접속은 최대 약 2,000명이었습니다.
 
 ```mermaid
 flowchart LR
@@ -37,14 +37,14 @@ flowchart LR
 
 While the game was live, the service ran as: **game client → Cloudflare (proxy, WAF) → AWS EC2 (FastAPI in Docker) → AWS RDS (MySQL)**.
 
-This repository holds the service's API, cleaned up and rewritten in October 2026. The request the game client sends is unchanged. The live service in 2023–2024, from design to deployment and operation, was my own work.
+This repository holds the service's API. The request the game client sends is the same as in the live service. The live service in 2023–2024, from design to deployment and operation, was my own work.
 
 ### Design
 
 - **One transaction per request.** A report is stored completely or not at all. Input is checked before the request takes a database connection, so malformed input is a `422` even when the database is down.
 - **Devices are registered once.** The first report creates the device (`INSERT IGNORE`) and later reports keep its first-seen time.
 - **One lookup per report.** The first chart key of every song in a report comes from a single grouped query.
-- **A connection for every worker thread.** FastAPI runs each request in one of 40 worker threads. The request takes its connection in that thread, after its input has been checked, and the pool can open 40 connections, so no request waits for one. An earlier version of this rewrite took the connection in a FastAPI dependency, which starved the pool: in a local load test with 60 clients sending at once, 281 of 600 requests failed with a pool timeout.
+- **A connection for every worker thread.** FastAPI runs each request in one of 40 worker threads. The request takes its connection in that thread, after its input has been checked, and the pool can open 40 connections, so no request waits for one. An earlier draft of the code in this repository took the connection in a FastAPI dependency, which starved the pool: in a local load test with 60 clients sending at once, 281 of 600 requests failed with a pool timeout.
 - **Every report is a row.** `report_tb` records each report under `(device_id, report_id)` with the time the server received it (`reported_at`), and every play-count row points to its report, so a device's snapshots can be told apart and ordered.
 - **A retried report is stored once.** A client may send its own `report_id`; a second delivery with the same id is answered with `"duplicate": true` and writes nothing, even when both arrive at once (the key makes the second `INSERT IGNORE` wait for the first). The game client as it was released sends no id, so the server assigns one and its retries are stored as separate reports. A `report_id` the device already used, sent with different play counts, is refused with `409`: `report_tb` keeps a SHA-256 of each report's parsed play counts, so a retry still matches when it is quoted differently.
 - **One row per chart.** Entries that name the same song in one report, a title twice or a title and its alias ([`client.py`](client.py) sends "Oort Cloud" and "오르트 구름"), are added up, so each chart gets one row per report. A sum that no longer fits a MySQL `INT` is a `422`.
@@ -111,12 +111,12 @@ Tests: `pip install -r requirements-dev.txt` and `python -m pytest -q`. Set `TES
 
 서비스 당시 운영 구성: **게임 클라이언트 → Cloudflare(프록시, WAF) → AWS EC2(Docker의 FastAPI) → AWS RDS(MySQL)**.
 
-이 저장소는 서비스 API를 2026년 10월에 정리해 다시 쓴 것입니다. 게임 클라이언트가 보내는 요청은 그대로입니다. 2023~2024년 실제 서비스의 설계·배포·운영은 제가 직접 했습니다.
+이 저장소에는 서비스 API가 있습니다. 게임 클라이언트가 보내는 요청은 실제 서비스 때와 같습니다. 2023~2024년 실제 서비스의 설계·배포·운영은 제가 직접 했습니다.
 
 - **요청 하나에 트랜잭션 하나**: 보고 하나는 전부 저장되거나 전혀 저장되지 않습니다. 입력은 DB 연결을 잡기 전에 검사하므로, DB가 내려가 있어도 잘못된 입력은 `422`가 됩니다.
 - **기기는 한 번만 등록**: 첫 보고에서 기기를 만들고(`INSERT IGNORE`), 이후 보고는 처음 본 시각을 유지합니다.
 - **조회는 보고당 한 번**: 보고에 담긴 모든 곡의 첫 차트 키를 그룹 쿼리 하나로 가져옵니다.
-- **작업 스레드마다 연결 하나**: FastAPI는 요청을 작업 스레드 40개 중 하나에서 실행합니다. 요청은 입력 검사가 끝난 뒤 그 스레드 안에서 연결을 잡고, 커넥션 풀은 연결을 40개까지 열 수 있어 연결을 기다리는 요청이 없습니다. 이 재작성의 이전 버전은 연결을 FastAPI 의존성으로 잡아 풀이 고갈됐고, 로컬 부하 테스트에서 클라이언트 60개가 동시에 보내자 요청 600개 중 281개가 풀 타임아웃으로 실패했습니다.
+- **작업 스레드마다 연결 하나**: FastAPI는 요청을 작업 스레드 40개 중 하나에서 실행합니다. 요청은 입력 검사가 끝난 뒤 그 스레드 안에서 연결을 잡고, 커넥션 풀은 연결을 40개까지 열 수 있어 연결을 기다리는 요청이 없습니다. 이 저장소 코드의 이전 초안은 연결을 FastAPI 의존성으로 잡아 풀이 고갈됐고, 로컬 부하 테스트에서 클라이언트 60개가 동시에 보내자 요청 600개 중 281개가 풀 타임아웃으로 실패했습니다.
 - **보고마다 한 행**: `report_tb`에 보고를 `(device_id, report_id)`와 서버가 받은 시각(`reported_at`)으로 남기고, 플레이 횟수 행은 모두 자기 보고를 가리킵니다. 그래서 한 기기의 스냅숏을 서로 구분하고 순서대로 볼 수 있습니다.
 - **재전송은 한 번만 저장**: 클라이언트가 `report_id`를 보내면, 같은 id로 다시 온 보고는 아무것도 쓰지 않고 `"duplicate": true`로 답합니다. 두 번이 동시에 와도 키 때문에 두 번째 `INSERT IGNORE`가 첫 번째를 기다립니다. 배포된 게임 클라이언트는 id를 보내지 않으므로 서버가 id를 붙이고, 그 재전송은 별개의 보고로 저장됩니다. 이미 쓴 `report_id`가 다른 플레이 횟수와 함께 오면 `409`로 거절합니다. `report_tb`에 파싱한 플레이 횟수의 SHA-256을 남겨 두므로, 따옴표 방식이 달라도 같은 보고의 재전송은 재전송으로 인식합니다.
 - **차트당 한 행**: 한 보고 안에서 같은 곡을 가리키는 항목(같은 제목 두 번, 또는 제목과 별칭. [`client.py`](client.py)는 "Oort Cloud"와 "오르트 구름"을 함께 보냅니다)은 횟수를 더해, 보고마다 차트당 한 행만 저장합니다. 더한 값이 MySQL `INT`를 넘으면 `422`입니다.
@@ -130,3 +130,8 @@ Tests: `pip install -r requirements-dev.txt` and `python -m pytest -q`. Set `TES
 오류 응답: 잘못된 입력은 `422`, 다른 플레이 횟수와 함께 재사용한 `report_id`는 `409`, 1MB가 넘는 본문은 `413`입니다.
 
 실행 방법은 위의 [Run](#run)과 같습니다. Docker로 띄운 MySQL에 `schema.sql`과 샘플 곡 하나(`seed.sql`)를 넣고, `.env`의 설정을 export한 뒤 uvicorn을 실행합니다.
+
+---
+
+<sub>This code is a 2026 cleanup and rewrite of the 2023–2024 service, so the commits are dated 2026.<br>
+이 코드는 2023~2024년 서비스를 2026년에 정리해 다시 쓴 것이라 커밋 날짜가 2026년입니다.</sub>
