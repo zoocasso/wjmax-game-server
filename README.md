@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/zoocasso/wjmax-game-server/actions/workflows/ci.yml/badge.svg)](https://github.com/zoocasso/wjmax-game-server/actions/workflows/ci.yml)
 
-Play-log ingestion API of **WJMAX**, a fan-made community rhythm game: about 300 players online on average and about 2,000 at the peak of an update day. I was the sole server developer, Aug 2023 – Feb 2024.
+Play-log ingestion API of **WJMAX**, a fan-made community rhythm game: about 300 players online on average and about 2,000 at the peak of an update day. I owned the server, database and security, Aug 2023 – Feb 2024.
 
 **Write-up:** [English](https://zoocasso.github.io/en/work/wjmax/) · [한국어](https://zoocasso.github.io/work/wjmax/)
 
@@ -13,7 +13,7 @@ Play-log ingestion API of **WJMAX**, a fan-made community rhythm game: about 300
 | At&nbsp;a&nbsp;glance | |
 | :--- | :--- |
 | **What** | The play-log ingestion API of **WJMAX**, a fan-made rhythm game in the Woowakgood community. Side project of two people |
-| **My part** | Sole server developer: server, security layer and database. Design, deployment and operation of the live service |
+| **My part** | Owned the server, security layer and database: design, deployment and operation of the live service |
 | **Others** | The main developer built the game and its client |
 | **Numbers** | Aug 2023 – Feb 2024 · about 300 players online on average, about 2,000 at the peak of an update day |
 | **Stack** | Python, FastAPI, SQLAlchemy, MySQL, Docker, AWS EC2 and RDS, Cloudflare |
@@ -23,7 +23,7 @@ Play-log ingestion API of **WJMAX**, a fan-made community rhythm game: about 300
 
 **In the live service (2023–2024)**
 
-- **Cloudflare in front of one server.** Game clients reached the API through Cloudflare (proxy, WAF); behind it ran FastAPI in Docker on AWS EC2, with the data in AWS RDS (MySQL). I designed, deployed and ran it alone.
+- **Cloudflare in front of one server.** Game clients reached the API through Cloudflare (proxy, WAF); behind it ran FastAPI in Docker on AWS EC2, with the data in AWS RDS (MySQL). I designed, deployed and ran it.
 - **One small request per play report.** The client sends its device id and, for every song, the play count of each of its eight charts; the server finds the song's first chart key and stores one row per chart. This request is unchanged in this repository, so the released client still works with it.
 
 **Added in this repository**
